@@ -1,0 +1,7 @@
+Hi there! Guileless Bopomofo 4.0.12 makes the Enter key smarter.
+
+* The Enter key now does what a text field asks of it: sending your message, running your search, or going to an address instead of just breaking the line. Fields with their own action label, such as Send, work too. Multiple line text boxes still break the line.
+* On a physical keyboard, Shift + Enter always breaks the line.
+* Updated the libchewing engine to 0.13.1.
+
+Thanks for using Guileless Bopomofo!

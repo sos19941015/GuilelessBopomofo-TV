@@ -30,7 +30,9 @@ class Enter : PhysicalKeyHandler {
         event: KeyEvent?,
     ): Boolean {
         Log.d("Enter", "onKeyDown()")
-        ChewingUtil.handleEnterAction()
+        // [Shift] + [Enter] is how one asks a physical keyboard for a line break without
+        // submitting the text field.
+        ChewingUtil.handleEnterAction(forcePlainEnterKey = event?.isShiftPressed == true)
         return true
     }
 

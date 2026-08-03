@@ -191,13 +191,24 @@ object ChewingUtil {
         }
     }
 
-    fun handleEnterAction() {
+    /**
+     * @param forcePlainEnterKey Ask for a line break even when the text field declares an
+     * editor action, as [Shift] + [Enter] does on a physical keyboard. Committing what is
+     * still in the buffer always comes first.
+     */
+    fun handleEnterAction(forcePlainEnterKey: Boolean = false) {
         if (anyBufferIsNotEmpty()) {
             ChewingBridge.chewing.commitPreeditBuf(ChewingBridge.chewing.context)
             EventBus.getDefault().post(Events.UpdateBufferViews())
-        } else {
-            EventBus.getDefault().post(Events.EnterKeyDownWhenBufferIsEmpty())
+            return
         }
+
+        if (forcePlainEnterKey) {
+            EventBus.getDefault().post(Events.SendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER))
+            return
+        }
+
+        EventBus.getDefault().post(Events.EnterKeyDownWhenBufferIsEmpty())
     }
 
     fun handleSpaceAction() {

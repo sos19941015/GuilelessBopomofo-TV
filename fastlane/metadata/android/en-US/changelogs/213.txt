@@ -1,0 +1,7 @@
+Hi there! Guileless Bopomofo 4.0.13 is a housekeeping release.
+
+* The keyboard no longer reloads itself every time you move to another text field. A form of short boxes, the six of a one time password say, used to rebuild it once per box.
+* Holding the backspace key now deletes on the main thread, so a long press can no longer upset the engine.
+* Tidied up a good deal of the code behind all of this, with more tests to keep it honest.
+
+Thanks for using Guileless Bopomofo!

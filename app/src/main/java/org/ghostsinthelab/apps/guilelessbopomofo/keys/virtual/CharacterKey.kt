@@ -20,7 +20,6 @@ package org.ghostsinthelab.apps.guilelessbopomofo.keys.virtual
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoService
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
@@ -29,12 +28,8 @@ import org.greenrobot.eventbus.EventBus
 
 class CharacterKey(context: Context, attrs: AttributeSet) :
     KeyImageButton(context, attrs) {
-    override var mDetector: GestureDetector
 
-    init {
-        mDetector = GestureDetector(context, MyGestureListener())
-        mDetector.setOnDoubleTapListener(null)
-    }
+    override fun createGestureListener() = MyGestureListener()
 
     // process frequently used gestures here.
     inner class MyGestureListener : GestureListener() {
@@ -46,15 +41,5 @@ class CharacterKey(context: Context, attrs: AttributeSet) :
             EventBus.getDefault().post(Events.PrintingKeyDown(this@CharacterKey))
             return super.onDown(e)
         }
-    }
-
-    // process detailed touch events here.
-    override fun onTouchEvent(event: MotionEvent?): Boolean {
-        event?.let {
-            when (it.action) {
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {}
-            }
-        }
-        return super.onTouchEvent(event)
     }
 }

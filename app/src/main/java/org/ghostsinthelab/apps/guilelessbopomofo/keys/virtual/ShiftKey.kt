@@ -22,7 +22,6 @@ import android.content.Context
 import android.util.AttributeSet
 import android.util.Log
 import android.util.TypedValue
-import android.view.GestureDetector
 import android.view.MotionEvent
 import androidx.annotation.AttrRes
 import org.ghostsinthelab.apps.guilelessbopomofo.R
@@ -35,26 +34,21 @@ class ShiftKey(context: Context, attrs: AttributeSet) : KeyImageButton(context, 
     override val logTag: String = "ShiftKeyImageButton"
 
     // manage Shift key state
-    enum class ShiftKeyState { RELEASED, PRESSED, HOLD }
+    enum class ShiftKeyState(@param:AttrRes val backgroundColorAttr: Int) {
+        RELEASED(R.attr.colorTertiary),
+        PRESSED(R.attr.colorSecondary),
+        HOLD(R.attr.colorPrimary),
+        ;
+
+        /** Tapping the key walks through the states, and around again. */
+        fun next(): ShiftKeyState = entries[(ordinal + 1) % entries.size]
+    }
 
     var currentShiftKeyState = ShiftKeyState.RELEASED
     val isActive: Boolean get() = currentShiftKeyState != ShiftKeyState.RELEASED
     val isLocked: Boolean get() = currentShiftKeyState == ShiftKeyState.HOLD
 
-    override var mDetector: GestureDetector
-
-    init {
-        mDetector = GestureDetector(context, MyGestureListener())
-        mDetector.setOnDoubleTapListener(null)
-
-        context.theme.obtainStyledAttributes(attrs, R.styleable.KeyImageButton, 0, 0).apply {
-            try {
-                keyCodeString = this.getString(R.styleable.KeyImageButton_keyCodeString)
-            } finally {
-                recycle()
-            }
-        }
-    }
+    override fun createGestureListener() = MyGestureListener()
 
     inner class MyGestureListener : GestureListener() {
         override fun onDown(e: MotionEvent): Boolean {
@@ -63,20 +57,7 @@ class ShiftKey(context: Context, attrs: AttributeSet) : KeyImageButton(context, 
         }
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
-            when (currentShiftKeyState) {
-                ShiftKeyState.RELEASED -> {
-                    switchToState(ShiftKeyState.PRESSED)
-                }
-
-                ShiftKeyState.PRESSED -> {
-                    switchToState(ShiftKeyState.HOLD)
-                }
-
-                ShiftKeyState.HOLD -> {
-                    switchToState(ShiftKeyState.RELEASED)
-                }
-            }
-
+            switchToState(currentShiftKeyState.next())
             return true
         }
     }
@@ -89,21 +70,8 @@ class ShiftKey(context: Context, attrs: AttributeSet) : KeyImageButton(context, 
 
     fun switchToState(state: ShiftKeyState) {
         Log.d(logTag, "Switch to state: $state")
-        this.currentShiftKeyState = state
-
-        val colorPrimary = context.getThemeColor(R.attr.colorPrimary)
-        val colorSecondary = context.getThemeColor(R.attr.colorSecondary)
-        val colorTertiary = context.getThemeColor(R.attr.colorTertiary)
-
-        val buttonStateBackgroundColors: Map<ShiftKeyState, Int> = mapOf(
-            ShiftKeyState.RELEASED to colorTertiary,
-            ShiftKeyState.PRESSED to colorSecondary,
-            ShiftKeyState.HOLD to colorPrimary
-        )
-
-        val backgroundColorToSet = buttonStateBackgroundColors.getValue(state)
-        background.setTint(backgroundColorToSet)
-
+        currentShiftKeyState = state
+        background.setTint(context.getThemeColor(state.backgroundColorAttr))
 
         // notify GuilelessBopomofoService of shift key state change
         EventBus.getDefault().post(Events.UpdateShiftKeyState(isActive, isLocked))

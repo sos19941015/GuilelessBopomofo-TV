@@ -20,13 +20,14 @@ package org.ghostsinthelab.apps.guilelessbopomofo.buffers
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.GestureDetector
 import org.ghostsinthelab.apps.guilelessbopomofo.ChewingBridge
 
 class BopomofoBufferTextView(context: Context, attrs: AttributeSet) :
     BufferTextView(context, attrs) {
 
-    override var mDetector: GestureDetector
+    override fun createGestureListener() = MyGestureListener()
+
+    override val detectsDoubleTap: Boolean = true
 
     init {
         // Purposes to this padding setting:
@@ -34,8 +35,6 @@ class BopomofoBufferTextView(context: Context, attrs: AttributeSet) :
         //   2. Set its height early
         val px = convertDpToPx(2F).toInt()
         this.setPadding(px, 0, px, 0)
-
-        mDetector = GestureDetector(context, MyGestureListener())
     }
 
     override fun update() {

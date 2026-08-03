@@ -24,7 +24,6 @@ import android.text.Spanned
 import android.text.style.UnderlineSpan
 import android.util.AttributeSet
 import android.util.Log
-import android.view.GestureDetector
 import android.view.MotionEvent
 import androidx.core.text.toSpannable
 import androidx.core.view.setPadding
@@ -40,8 +39,6 @@ import org.greenrobot.eventbus.EventBus
 class PreEditBufferTextView(context: Context, attrs: AttributeSet) :
     BufferTextView(context, attrs), Vibratable {
     private val logTag = "PreEditBufferTextView"
-    private lateinit var span: SpannableString
-    override var mDetector: GestureDetector
     var offset: Int = 0
     val paddingPx = convertDpToPx(12F).toInt()
 
@@ -50,15 +47,14 @@ class PreEditBufferTextView(context: Context, attrs: AttributeSet) :
         PHYSICAL_KEYBOARD
     }
 
-    init {
-        mDetector = GestureDetector(context, MyGestureListener())
-        mDetector.setOnDoubleTapListener(null)
-    }
+    override fun createGestureListener() = MyGestureListener()
+
+    private val cursor = Cursor()
 
     fun cursorMovedBy(source: CursorMovedFrom) {
         when (source) {
             CursorMovedFrom.TOUCHSCREEN -> {
-                Cursor().moveToOffset(offset)
+                cursor.moveToOffset(offset)
 
                 // 如果使用者點選最後一個字的時候很邊邊角角，
                 // 很可能 getOffsetForPosition() 算出來的值會超界，要扣回來
@@ -81,11 +77,10 @@ class PreEditBufferTextView(context: Context, attrs: AttributeSet) :
 
     // It just renders, presents underline for current cursor
     private fun renderCursorUnderlineSpan() {
-        span = this.text.toSpannable() as SpannableString
-        val underlineSpans = span.getSpans(0, span.length, UnderlineSpan::class.java)
+        val span = this.text.toSpannable() as SpannableString
 
         // clear the existent underlines first
-        underlineSpans?.forEach {
+        span.getSpans(0, span.length, UnderlineSpan::class.java)?.forEach {
             span.removeSpan(it)
         }
 
@@ -118,7 +113,7 @@ class PreEditBufferTextView(context: Context, attrs: AttributeSet) :
         // in order to make user aware of the cursor is at the end of the buffer
         if (ChewingBridge.chewing.bufferLen() > 0 && ChewingBridge.chewing.cursorCurrent() >= ChewingBridge.chewing.bufferLen()) {
             Log.d(logTag, "Expand paddingEnd")
-            this@PreEditBufferTextView.updatePadding(right = paddingPx + convertDpToPx(12F).toInt())
+            this@PreEditBufferTextView.updatePadding(right = paddingPx * 2)
         } else {
             Log.d(logTag, "Shrink paddingEnd")
             this@PreEditBufferTextView.updatePadding(right = paddingPx)
@@ -126,17 +121,17 @@ class PreEditBufferTextView(context: Context, attrs: AttributeSet) :
     }
 
     fun updateCursorPosition() {
-        Cursor().syncOffsetWithCursor()
+        cursor.syncOffsetWithCursor()
         renderCursorUnderlineSpan()
     }
 
     fun updateCursorPositionToBegin() {
-        Cursor().moveToBegin()
+        cursor.moveToBegin()
         renderCursorUnderlineSpan()
     }
 
     fun updateCursorPositionToEnd() {
-        Cursor().moveToEnd()
+        cursor.moveToEnd()
         renderCursorUnderlineSpan()
     }
 

@@ -22,11 +22,11 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.util.Log
-import android.view.View
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import org.ghostsinthelab.apps.guilelessbopomofo.databinding.ActivityMainBinding
@@ -37,8 +37,12 @@ class MainActivity : AppCompatActivity() {
     // ViewBinding
     private lateinit var viewBinding: ActivityMainBinding
 
+    companion object {
+        // How many taps on the app icon it takes to reveal the engineering mode.
+        private const val ENGINEERING_MODE_ENTER_CLICKS = 5
+    }
+
     private var engineeringModeEnterCount: Int = 0
-    private val engineeringModeEnterClicks: Int = 5
     private var engineeringModeEnabled: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,36 +58,27 @@ class MainActivity : AppCompatActivity() {
             )
 
             imageViewAppIcon.setOnClickListener {
-                if (engineeringModeEnterCount >= engineeringModeEnterClicks || engineeringModeEnabled) {
+                if (engineeringModeEnterCount >= ENGINEERING_MODE_ENTER_CLICKS || engineeringModeEnabled) {
                     engineeringModeEnabled = true
-                    val engineeringModeIntent = Intent(this@MainActivity, EngineeringModeActivity::class.java)
-                    startActivity(engineeringModeIntent)
+                    startActivity(Intent(this@MainActivity, EngineeringModeActivity::class.java))
                 } else {
                     engineeringModeEnterCount += 1
                 }
-
-                return@setOnClickListener
             }
 
             bottomNavigation.setOnItemSelectedListener { item ->
-                when (item.itemId) {
-                    R.id.nav_general -> {
-                        switchFragment(GeneralSettingsFragment())
-                        true
-                    }
-                    R.id.nav_user_interface -> {
-                        switchFragment(UserInterfaceSettingsFragment())
-                        true
-                    }
-                    R.id.nav_physical_keyboard -> {
-                        switchFragment(PhysicalKeyboardSettingsFragment())
-                        true
-                    }
-                    R.id.nav_user_phrases -> {
-                        switchFragment(UserPhraseManagerFragment())
-                        true
-                    }
-                    else -> false
+                val fragment: Fragment? = when (item.itemId) {
+                    R.id.nav_general -> GeneralSettingsFragment()
+                    R.id.nav_user_interface -> UserInterfaceSettingsFragment()
+                    R.id.nav_physical_keyboard -> PhysicalKeyboardSettingsFragment()
+                    R.id.nav_user_phrases -> UserPhraseManagerFragment()
+                    else -> null
+                }
+                if (fragment == null) {
+                    false
+                } else {
+                    switchFragment(fragment)
+                    true
                 }
             }
         }
@@ -91,8 +86,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(viewBinding.root)
 
         if (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
-            viewBinding.headerLayout.visibility = View.GONE
-            viewBinding.divider.visibility = View.GONE
+            viewBinding.headerLayout.isVisible = false
+            viewBinding.divider.isVisible = false
         }
 
         // Apply system-bar and cutout insets as internal padding on the header and
@@ -104,7 +99,7 @@ class MainActivity : AppCompatActivity() {
             val insets = windowInsets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
-            if (viewBinding.headerLayout.visibility == View.GONE) {
+            if (!viewBinding.headerLayout.isVisible) {
                 viewBinding.fragmentContainer.updatePadding(
                     left = insets.left, top = insets.top, right = insets.right
                 )

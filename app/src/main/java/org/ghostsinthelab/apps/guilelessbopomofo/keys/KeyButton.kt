@@ -32,13 +32,26 @@ abstract class KeyButton(context: Context, attrs: AttributeSet) :
     DisplayMetricsComputable {
     override var keyCodeString: String? = null
 
-    abstract var mDetector: GestureDetector
-
     abstract class GestureListener : GestureDetector.SimpleOnGestureListener(), Vibratable
+
+    /** The gestures this key answers to. */
+    protected abstract fun createGestureListener(): GestureDetector.SimpleOnGestureListener
+
+    /**
+     * Whether a quick second tap is a gesture of its own. Leaving it off is what an ordinary
+     * key wants: every tap counts, none of them is held back waiting for its twin.
+     */
+    protected open val detectsDoubleTap: Boolean = false
+
+    private val gestureDetector: GestureDetector by lazy(LazyThreadSafetyMode.NONE) {
+        GestureDetector(context, createGestureListener()).also {
+            if (!detectsDoubleTap) it.setOnDoubleTapListener(null)
+        }
+    }
 
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         if (event != null) {
-            mDetector.onTouchEvent(event)
+            gestureDetector.onTouchEvent(event)
         }
         return super.onTouchEvent(event)
     }

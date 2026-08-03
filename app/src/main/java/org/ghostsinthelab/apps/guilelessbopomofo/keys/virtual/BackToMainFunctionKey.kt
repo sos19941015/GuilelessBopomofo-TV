@@ -20,7 +20,6 @@ package org.ghostsinthelab.apps.guilelessbopomofo.keys.virtual
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.KeyButton
@@ -28,11 +27,10 @@ import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
 import org.greenrobot.eventbus.EventBus
 
 class BackToMainFunctionKey(context: Context, attrs: AttributeSet) : KeyButton(context, attrs) {
-    override var mDetector: GestureDetector
 
-    init {
-        mDetector = GestureDetector(context, MyGestureListener())
-    }
+    override fun createGestureListener() = MyGestureListener()
+
+    override val detectsDoubleTap: Boolean = true
 
     inner class MyGestureListener : GestureListener() {
         override fun onDown(e: MotionEvent): Boolean {

@@ -22,19 +22,14 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
-import android.widget.ArrayAdapter
-import android.widget.AutoCompleteTextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isGone
-import androidx.fragment.app.Fragment
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CONVERSION_ENGINE
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_ETEN26_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_HSU_QWERTY_LAYOUT
@@ -42,26 +37,36 @@ import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABL
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_PHRASE_CHOICE_REARWARD
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_SOFT_KEYBOARD_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.databinding.FragmentGeneralSettingsBinding
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.bindRadioGroupToPreference
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.bindToPreference
 
-class GeneralSettingsFragment : Fragment() {
-    private var _binding: FragmentGeneralSettingsBinding? = null
-    private val binding get() = _binding!!
+class GeneralSettingsFragment : ViewBindingFragment<FragmentGeneralSettingsBinding>() {
     private lateinit var sharedPreferences: SharedPreferences
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        _binding = FragmentGeneralSettingsBinding.inflate(inflater, container, false)
-        return binding.root
+    companion object {
+        // In the order R.array.on_screen_bopomofo_keyboard_layouts names them.
+        private val SOFT_KEYBOARD_LAYOUTS: List<String> = listOf(
+            BopomofoSoftKeyboards.KB_DEFAULT.layout,
+            BopomofoSoftKeyboards.KB_HSU.layout,
+            BopomofoSoftKeyboards.KB_ET26.layout,
+            BopomofoSoftKeyboards.KB_ET.layout,
+            BopomofoSoftKeyboards.KB_DACHEN_CP26.layout,
+        )
     }
+
+    override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
+        FragmentGeneralSettingsBinding.inflate(inflater, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        sharedPreferences = requireContext().getSharedPreferences(APP_SHARED_PREFERENCES, AppCompatActivity.MODE_PRIVATE)
+        sharedPreferences = requireContext().appSharedPreferences
 
         binding.sectionGeneral.apply {
-            val startImeSystemSettingActivity = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                textViewServiceStatus.text = currentGuilelessBopomofoServiceStatus()
-            }
-
+            val startImeSystemSettingActivity =
+                registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                    textViewServiceStatus.text = currentGuilelessBopomofoServiceStatus()
+                }
             val intent = Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)
 
             if (!isGuilelessBopomofoEnabled()) {
@@ -77,121 +82,58 @@ class GeneralSettingsFragment : Fragment() {
 
             textViewServiceStatus.text = currentGuilelessBopomofoServiceStatus()
 
-            val keyboardLayouts = resources.getStringArray(R.array.on_screen_bopomofo_keyboard_layouts)
-            val layoutMap = mapOf(
-                keyboardLayouts[0] to BopomofoSoftKeyboards.KB_DEFAULT.layout,
-                keyboardLayouts[1] to BopomofoSoftKeyboards.KB_HSU.layout,
-                keyboardLayouts[2] to BopomofoSoftKeyboards.KB_ET26.layout,
-                keyboardLayouts[3] to BopomofoSoftKeyboards.KB_ET.layout,
-                keyboardLayouts[4] to BopomofoSoftKeyboards.KB_DACHEN_CP26.layout
+            onScreenBopomofoKeyboardLayoutDropdownMenu.bindToPreference(
+                sharedPreferences,
+                USER_SOFT_KEYBOARD_LAYOUT,
+                BopomofoSoftKeyboards.KB_DEFAULT.layout,
+                entries = resources.getStringArray(R.array.on_screen_bopomofo_keyboard_layouts).toList(),
+                values = SOFT_KEYBOARD_LAYOUTS,
+            ) { selectedLayout ->
+                // The QWERTY variants only mean something for the layouts that have one.
+                switchDisplayHsuQwertyLayout.isGone = selectedLayout != BopomofoSoftKeyboards.KB_HSU.layout
+                switchDisplayEten26QwertyLayout.isGone = selectedLayout != BopomofoSoftKeyboards.KB_ET26.layout
+            }
+
+            switchDisplayHsuQwertyLayout.bindToPreference(
+                sharedPreferences, USER_DISPLAY_HSU_QWERTY_LAYOUT, false
+            )
+            switchDisplayEten26QwertyLayout.bindToPreference(
+                sharedPreferences, USER_DISPLAY_ETEN26_QWERTY_LAYOUT, false
+            )
+            switchSettingSpaceAsSelection.bindToPreference(
+                sharedPreferences, USER_ENABLE_SPACE_AS_SELECTION, true
+            )
+            switchRearwardPhraseChoice.bindToPreference(
+                sharedPreferences, USER_PHRASE_CHOICE_REARWARD, false
             )
 
-            val adapter = ArrayAdapter(
-                requireContext(),
-                android.R.layout.simple_dropdown_item_1line,
-                keyboardLayouts
-            )
-            (onScreenBopomofoKeyboardLayoutDropdownMenu.editText as? AutoCompleteTextView)?.let { autoCompleteTextView ->
-                autoCompleteTextView.setAdapter(adapter)
-                val currentLayout = sharedPreferences.getString(
-                    USER_SOFT_KEYBOARD_LAYOUT, BopomofoSoftKeyboards.KB_DEFAULT.layout
+            bindRadioGroupToPreference(
+                sharedPreferences,
+                USER_CONVERSION_ENGINE,
+                ConversionEngines.CHEWING_CONVERSION_ENGINE.mode,
+                mapOf(
+                    radioButtonSimpleConversionEngine to ConversionEngines.SIMPLE_CONVERSION_ENGINE.mode,
+                    radioButtonChewingConversionEngine to ConversionEngines.CHEWING_CONVERSION_ENGINE.mode,
+                    radioButtonFuzzyChewingConversionEngine to ConversionEngines.FUZZY_CHEWING_CONVERSION_ENGINE.mode,
                 )
-                val currentLayoutName = layoutMap.entries.find { it.value == currentLayout }?.key
-                autoCompleteTextView.setText(currentLayoutName, false)
-
-                autoCompleteTextView.setOnItemClickListener { _, _, position, _ ->
-                    val selectedLayout = layoutMap[keyboardLayouts[position]]
-                    sharedPreferences.edit().putString(USER_SOFT_KEYBOARD_LAYOUT, selectedLayout).apply()
-
-                    switchDisplayHsuQwertyLayout.isGone = selectedLayout != BopomofoSoftKeyboards.KB_HSU.layout
-                    switchDisplayEten26QwertyLayout.isGone = selectedLayout != BopomofoSoftKeyboards.KB_ET26.layout
-                }
-
-                switchDisplayHsuQwertyLayout.isGone = currentLayout != BopomofoSoftKeyboards.KB_HSU.layout
-                switchDisplayEten26QwertyLayout.isGone = currentLayout != BopomofoSoftKeyboards.KB_ET26.layout
-            }
-
-            switchDisplayHsuQwertyLayout.let {
-                if (sharedPreferences.getBoolean(USER_DISPLAY_HSU_QWERTY_LAYOUT, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_DISPLAY_HSU_QWERTY_LAYOUT, it.isChecked).apply()
-                }
-            }
-
-            switchDisplayEten26QwertyLayout.let {
-                if (sharedPreferences.getBoolean(USER_DISPLAY_ETEN26_QWERTY_LAYOUT, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_DISPLAY_ETEN26_QWERTY_LAYOUT, it.isChecked).apply()
-                }
-            }
-
-            for ((button, conversionEngine) in mapOf(
-                radioButtonSimpleConversionEngine to ConversionEngines.SIMPLE_CONVERSION_ENGINE.mode,
-                radioButtonChewingConversionEngine to ConversionEngines.CHEWING_CONVERSION_ENGINE.mode,
-                radioButtonFuzzyChewingConversionEngine to ConversionEngines.FUZZY_CHEWING_CONVERSION_ENGINE.mode
-            )) {
-                button.setOnClickListener {
-                    sharedPreferences.edit().putInt(USER_CONVERSION_ENGINE, conversionEngine).apply()
-                }
-
-                if (sharedPreferences.getInt(
-                        USER_CONVERSION_ENGINE, ConversionEngines.CHEWING_CONVERSION_ENGINE.mode
-                    ) == conversionEngine
-                ) {
-                    button.isChecked = true
-                }
-            }
-
-            switchSettingSpaceAsSelection.let {
-                if (sharedPreferences.getBoolean(USER_ENABLE_SPACE_AS_SELECTION, true)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_ENABLE_SPACE_AS_SELECTION, it.isChecked).apply()
-                }
-            }
-
-            switchRearwardPhraseChoice.let {
-                if (sharedPreferences.getBoolean(USER_PHRASE_CHOICE_REARWARD, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_PHRASE_CHOICE_REARWARD, it.isChecked).apply()
-                }
-            }
-
+            )
         }
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
     }
 
     private fun isGuilelessBopomofoEnabled(): Boolean {
-        val inputMethodManager = requireContext().getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager
-            ?: return false
-        val enabledInputMethodList = inputMethodManager.enabledInputMethodList
-
-        enabledInputMethodList.forEach {
-            if (it.serviceName == GuilelessBopomofoService::class.java.name) {
-                return true
-            }
+        val inputMethodManager =
+            requireContext().getSystemService(AppCompatActivity.INPUT_METHOD_SERVICE) as? InputMethodManager
+                ?: return false
+        return inputMethodManager.enabledInputMethodList.any {
+            it.serviceName == GuilelessBopomofoService::class.java.name
         }
-        return false
     }
 
     private fun currentGuilelessBopomofoServiceStatus(): String {
-        return if (isGuilelessBopomofoEnabled()) getString(R.string.service_is_enabled) else getString(
-            R.string.service_is_disabled
-        )
+        return if (isGuilelessBopomofoEnabled()) {
+            getString(R.string.service_is_enabled)
+        } else {
+            getString(R.string.service_is_disabled)
+        }
     }
 }

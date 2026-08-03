@@ -21,6 +21,7 @@ package org.ghostsinthelab.apps.guilelessbopomofo
 import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
+import org.ghostsinthelab.apps.guilelessbopomofo.enums.DirectionKey
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.EnterKeyIntent
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.Layout
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
@@ -31,9 +32,19 @@ import java.io.FileOutputStream
 object ChewingUtil {
     private const val logTag = "ChewingUtil"
 
-    fun listOfDataFiles(): List<String> {
-        return listOf("tsi.dat", "word.dat", "swkb.dat", "symbols.dat")
-    }
+    // The dictionaries shipped as assets, which libchewing reads from the app's data directory.
+    private val DATA_FILES: List<String> = listOf("tsi.dat", "word.dat", "swkb.dat", "symbols.dat")
+
+    // What libchewing writes as the user types, and what a reset throws away.
+    private val USER_DATA_FILES: List<String> = listOf("chewing-deleted.dat", "userhash.dat")
+
+    private const val DATA_VERSION_FILE = "data_appversion.txt"
+
+    // 「常用符號」is the third entry of the symbol picker. The selection keys are not
+    // guaranteed to be 0-9, so reaching for it by index is the safer way.
+    private const val FREQUENTLY_USED_SYMBOLS_INDEX = 2
+
+    fun listOfDataFiles(): List<String> = DATA_FILES
 
     fun ensureChewingConnected(context: Context) {
         if (ChewingBridge.chewing.context != 0L) return
@@ -48,22 +59,41 @@ object ChewingUtil {
      * to write userhash.dat. Call this after adding or removing user phrases.
      */
     fun flushContext(context: Context) {
+        reconnect(context)
+    }
+
+    /**
+     * Throws away everything libchewing has learned from this user.
+     */
+    fun resetUserPhraseData(context: Context) {
+        reconnect(context) { chewingDataDir ->
+            USER_DATA_FILES.forEach { File(chewingDataDir, it).delete() }
+        }
+    }
+
+    /**
+     * Hands the chewing context back to libchewing and asks for a fresh one, which is the
+     * only way to make it write out what it has learned. [whileDisconnected] runs in
+     * between, when no context is holding the data files open.
+     */
+    private inline fun reconnect(context: Context, whileDisconnected: (File) -> Unit = {}) {
         val dataPath = context.applicationInfo.dataDir
         ChewingBridge.chewing.delete()
         ChewingBridge.chewing.context = 0
+        whileDisconnected(File(dataPath))
         ChewingBridge.chewing.connect(dataPath)
     }
 
     fun setupChewingData(context: Context, dataPath: String) {
         val chewingDataDir = File(dataPath)
 
-        if (!checkChewingData(dataPath)) {
+        if (!chewingDataFilesInstalled(dataPath)) {
             Log.d(logTag, "Install Chewing data files.")
             installChewingData(context, dataPath)
         }
 
         val appVersion = BuildConfig.VERSION_NAME.toByteArray()
-        val chewingDataAppVersionTxt = File(chewingDataDir, "data_appversion.txt")
+        val chewingDataAppVersionTxt = File(chewingDataDir, DATA_VERSION_FILE)
 
         if (!chewingDataAppVersionTxt.exists()) {
             chewingDataAppVersionTxt.appendBytes(appVersion)
@@ -78,7 +108,7 @@ object ChewingUtil {
 
     private fun installChewingData(context: Context, dataPath: String) {
         val chewingDataDir = File(dataPath)
-        for (file in listOfDataFiles()) {
+        for (file in DATA_FILES) {
             val destinationFile = File(chewingDataDir, file)
             Log.d(logTag, "Copying ${file}...")
             try {
@@ -93,33 +123,13 @@ object ChewingUtil {
         }
     }
 
-    private fun checkChewingData(dataPath: String): Boolean {
+    /**
+     * Whether every dictionary libchewing needs is where it expects to find it.
+     */
+    fun chewingDataFilesInstalled(dataPath: String): Boolean {
         Log.d(logTag, "Checking Chewing data files...")
         val chewingDataDir = File(dataPath)
-        for (file in listOfDataFiles()) {
-            val destinationFile = File(chewingDataDir, file)
-            if (!destinationFile.exists()) {
-                return false
-            }
-        }
-        return true
-    }
-
-    fun resetUserPhraseData(context: Context) {
-        val dataPath = context.applicationInfo.dataDir
-        val chewingDataDir = File(dataPath)
-
-        ChewingBridge.chewing.delete()
-        ChewingBridge.chewing.context = 0
-
-        for (file in listOf("chewing-deleted.dat", "userhash.dat")) {
-            val target = File(chewingDataDir, file)
-            if (target.exists()) {
-                target.delete()
-            }
-        }
-
-        ChewingBridge.chewing.connect(dataPath)
+        return DATA_FILES.all { File(chewingDataDir, it).exists() }
     }
 
     fun enumerateUserPhrases(): List<UserPhrase> {
@@ -147,40 +157,40 @@ object ChewingUtil {
     }
 
     fun openSymbolCandidates() {
-        ChewingBridge.chewing.candClose()
-        ChewingBridge.chewing.handleDefault('`')
-        ChewingBridge.chewing.candOpen()
+        openSymbolPicker()
     }
 
     fun openFrequentlyUsedCandidates() {
+        openSymbolPicker { ChewingBridge.chewing.candChooseByIndex(FREQUENTLY_USED_SYMBOLS_INDEX) }
+    }
+
+    /**
+     * Brings up the symbol picker, which the `‵` key opens. [descend] may walk into one of
+     * its sub-menus before the candidates are shown.
+     */
+    private inline fun openSymbolPicker(descend: () -> Unit = {}) {
         ChewingBridge.chewing.candClose()
         ChewingBridge.chewing.handleDefault('`')
-        // 「常用符號」
-        // 選字鍵不能保證一定是 0-9，用 candChooseByIndex() 相對妥當
-        ChewingBridge.chewing.candChooseByIndex(2)
+        descend()
         ChewingBridge.chewing.candOpen()
     }
 
     fun getCandidatesByPage(page: Int = 0): List<Candidate> {
-        val fromOffset = page * ChewingBridge.chewing.candChoicePerPage()
-        val toOffset = fromOffset + ChewingBridge.chewing.candChoicePerPage() - 1
-        val candidatesInThisPage: MutableList<Candidate> = mutableListOf()
-        val selKeys = ChewingBridge.chewing.getSelKey()
+        val candidatesPerPage = ChewingBridge.chewing.candChoicePerPage()
+        val selectionKeys = ChewingBridge.chewing.getSelKey()
+        val fromOffset = page * candidatesPerPage
 
-        for (i in fromOffset..toOffset) {
-            if (ChewingBridge.chewing.candStringByIndexStatic(i).isNotBlank()) {
-                candidatesInThisPage.add(getCandidate(index = i))
+        return (fromOffset until fromOffset + candidatesPerPage)
+            .map { index -> index to ChewingBridge.chewing.candStringByIndexStatic(index) }
+            .filter { (_, candidateString) -> candidateString.isNotBlank() }
+            .mapIndexed { positionInPage, (index, candidateString) ->
+                Candidate(
+                    index = index,
+                    candidateString = candidateString,
+                    // binding selection key
+                    selectionKey = selectionKeys.getOrNull(positionInPage)?.toChar() ?: '\u0000',
+                )
             }
-        }
-
-        // binding selection key
-        candidatesInThisPage.mapIndexed { index, candidate ->
-            if (index < selKeys.size) {
-                candidate.selectionKey = selKeys[index].toChar()
-            }
-        }
-
-        return candidatesInThisPage.toList()
     }
 
     fun handleBackspaceAction() {
@@ -216,7 +226,7 @@ object ChewingUtil {
         if (anyBufferIsNotEmpty()) {
             ChewingBridge.chewing.handleSpace()
             EventBus.getDefault().post(Events.UpdateBufferViews())
-            if (ChewingBridge.chewing.getSpaceAsSelection() == 1 && ChewingBridge.chewing.candTotalChoice() > 0) {
+            if (ChewingBridge.chewing.getSpaceAsSelection() == 1 && candidateWindowOpened()) {
                 openCandidates()
             }
         } else {
@@ -224,14 +234,22 @@ object ChewingUtil {
         }
     }
 
+    /**
+     * Moves the chewing cursor one character to either side, and lets whoever is showing the
+     * buffer or the candidates know about it.
+     */
+    fun moveCursorHorizontally(direction: DirectionKey) {
+        when (direction) {
+            DirectionKey.LEFT -> ChewingBridge.chewing.handleLeft()
+            DirectionKey.RIGHT -> ChewingBridge.chewing.handleRight()
+        }
+        EventBus.getDefault().post(Events.DirectionKeyDown(direction))
+    }
+
     fun openCandidates() {
         ChewingBridge.chewing.candClose()
         ChewingBridge.chewing.candOpen()
         EventBus.getDefault().post(Events.SwitchToLayout(Layout.CANDIDATES))
-    }
-
-    private fun getCandidate(index: Int): Candidate {
-        return Candidate(index, ChewingBridge.chewing.candStringByIndexStatic(index))
     }
 
     // simulates [Shift] + [,]

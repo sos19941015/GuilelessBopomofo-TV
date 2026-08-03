@@ -23,9 +23,7 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.appcompat.app.AppCompatActivity
-import androidx.fragment.app.Fragment
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
+import androidx.core.content.edit
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_IME_SWITCH
@@ -35,112 +33,65 @@ import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_HAPTI
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_KEY_BUTTON_HEIGHT
 import org.ghostsinthelab.apps.guilelessbopomofo.databinding.FragmentUserInterfaceSettingsBinding
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.bindToPreference
 
-class UserInterfaceSettingsFragment : Fragment(), Vibratable {
-    private var _binding: FragmentUserInterfaceSettingsBinding? = null
-    private val binding get() = _binding!!
+class UserInterfaceSettingsFragment : ViewBindingFragment<FragmentUserInterfaceSettingsBinding>(), Vibratable {
     private lateinit var sharedPreferences: SharedPreferences
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        _binding = FragmentUserInterfaceSettingsBinding.inflate(inflater, container, false)
-        return binding.root
+    companion object {
+        private const val DEFAULT_KEY_BUTTON_HEIGHT_DP = 52
     }
+
+    override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
+        FragmentUserInterfaceSettingsBinding.inflate(inflater, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        sharedPreferences = requireContext().getSharedPreferences(APP_SHARED_PREFERENCES, AppCompatActivity.MODE_PRIVATE)
+        sharedPreferences = requireContext().appSharedPreferences
 
         binding.sectionUserInterface.apply {
-            var hapticFeedbackPreferenceStrength = sharedPreferences.getInt(
+            val hapticFeedbackStrength = sharedPreferences.getInt(
                 USER_HAPTIC_FEEDBACK_STRENGTH, GuilelessBopomofoService.defaultHapticFeedbackStrength
             )
-
             textViewSettingHapticFeedbaclCurrentStrength.text =
-                getString(R.string.haptic_feedback_strength_setting, hapticFeedbackPreferenceStrength)
-
-            seekBarHapticFeedbackStrength.value = hapticFeedbackPreferenceStrength.toFloat()
+                getString(R.string.haptic_feedback_strength_setting, hapticFeedbackStrength)
+            seekBarHapticFeedbackStrength.value = hapticFeedbackStrength.toFloat()
             seekBarHapticFeedbackStrength.addOnChangeListener { _, value, _ ->
-                hapticFeedbackPreferenceStrength = value.toInt()
-                performVibration(
-                    requireContext(), hapticFeedbackPreferenceStrength
-                )
-
-                sharedPreferences.edit().putInt(
-                    USER_HAPTIC_FEEDBACK_STRENGTH, hapticFeedbackPreferenceStrength
-                ).apply()
+                val strength = value.toInt()
+                // Let the user feel what they are choosing.
+                performVibration(requireContext(), strength)
+                sharedPreferences.edit { putInt(USER_HAPTIC_FEEDBACK_STRENGTH, strength) }
                 textViewSettingHapticFeedbaclCurrentStrength.text =
-                    getString(R.string.haptic_feedback_strength_setting, hapticFeedbackPreferenceStrength)
+                    getString(R.string.haptic_feedback_strength_setting, strength)
             }
 
-            switchSettingApplySameHapticFeedbackStrengthToFunctionButtons.let {
-                if (sharedPreferences.getBoolean(SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit()
-                        .putBoolean(SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS, it.isChecked).apply()
-                }
-            }
-
-            switchSettingFullscreenWhenInLandscape.let {
-                if (sharedPreferences.getBoolean(USER_FULLSCREEN_WHEN_IN_LANDSCAPE, true)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_FULLSCREEN_WHEN_IN_LANDSCAPE, it.isChecked).apply()
-                }
-            }
-
-            switchSettingFullscreenWhenInPortrait.let {
-                if (sharedPreferences.getBoolean(USER_FULLSCREEN_WHEN_IN_PORTRAIT, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_FULLSCREEN_WHEN_IN_PORTRAIT, it.isChecked).apply()
-                }
-            }
-
-            var keyButtonPreferenceHeight = sharedPreferences.getInt(USER_KEY_BUTTON_HEIGHT, 52)
-
-            seekBarKeyButtonHeight.value = keyButtonPreferenceHeight.toFloat()
-
+            val keyButtonHeight = sharedPreferences.getInt(USER_KEY_BUTTON_HEIGHT, DEFAULT_KEY_BUTTON_HEIGHT_DP)
             textViewSettingKeyButtonCurrentHeight.text =
-                getString(R.string.key_button_height_setting, keyButtonPreferenceHeight)
-
+                getString(R.string.key_button_height_setting, keyButtonHeight)
+            seekBarKeyButtonHeight.value = keyButtonHeight.toFloat()
             seekBarKeyButtonHeight.addOnChangeListener { _, value, _ ->
-                keyButtonPreferenceHeight = value.toInt()
-                sharedPreferences.edit().putInt(USER_KEY_BUTTON_HEIGHT, keyButtonPreferenceHeight).apply()
+                val height = value.toInt()
+                sharedPreferences.edit { putInt(USER_KEY_BUTTON_HEIGHT, height) }
                 textViewSettingKeyButtonCurrentHeight.text =
-                    getString(R.string.key_button_height_setting, keyButtonPreferenceHeight)
+                    getString(R.string.key_button_height_setting, height)
             }
 
-            switchSettingEnableImeSwitch.let {
-                if (sharedPreferences.getBoolean(USER_ENABLE_IME_SWITCH, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_ENABLE_IME_SWITCH, it.isChecked).apply()
-                }
-            }
-
-            switchSettingImeSwitch.let {
-                if (sharedPreferences.getBoolean(USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH, false)) {
-                    it.isChecked = true
-                }
-
-                it.setOnCheckedChangeListener { _, _ ->
-                    sharedPreferences.edit().putBoolean(USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH, it.isChecked).apply()
-                }
-            }
+            switchSettingApplySameHapticFeedbackStrengthToFunctionButtons.bindToPreference(
+                sharedPreferences, SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS, false
+            )
+            switchSettingFullscreenWhenInLandscape.bindToPreference(
+                sharedPreferences, USER_FULLSCREEN_WHEN_IN_LANDSCAPE, true
+            )
+            switchSettingFullscreenWhenInPortrait.bindToPreference(
+                sharedPreferences, USER_FULLSCREEN_WHEN_IN_PORTRAIT, false
+            )
+            switchSettingEnableImeSwitch.bindToPreference(
+                sharedPreferences, USER_ENABLE_IME_SWITCH, false
+            )
+            switchSettingImeSwitch.bindToPreference(
+                sharedPreferences, USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH, false
+            )
         }
-    }
-
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
     }
 }

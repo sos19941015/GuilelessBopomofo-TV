@@ -18,31 +18,6 @@
 
 package org.ghostsinthelab.apps.guilelessbopomofo.keys.physical
 
-import android.content.Context
-import android.view.KeyEvent
-import org.ghostsinthelab.apps.guilelessbopomofo.ChewingBridge
-import org.ghostsinthelab.apps.guilelessbopomofo.ChewingUtil
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.DirectionKey
-import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
-import org.greenrobot.eventbus.EventBus
 
-class Left : PhysicalKeyHandler {
-    override fun onKeyDown(
-        context: Context,
-        keyCode: Int,
-        event: KeyEvent?,
-    ): Boolean {
-        // simulate Ctrl-Left as Home key
-        event?.let { event ->
-            if (event.isCtrlPressed && ChewingUtil.candidateWindowClosed()) {
-                ChewingBridge.chewing.handleHome()
-                EventBus.getDefault().post(Events.UpdateCursorPosition())
-                return true
-            }
-        }
-        ChewingBridge.chewing.handleLeft()
-        EventBus.getDefault().post(Events.DirectionKeyDown(DirectionKey.LEFT))
-
-        return true
-    }
-}
+class Left : HorizontalArrowKey(DirectionKey.LEFT)

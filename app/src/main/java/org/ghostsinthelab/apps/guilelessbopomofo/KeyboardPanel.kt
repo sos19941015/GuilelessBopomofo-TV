@@ -22,14 +22,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.AttributeSet
 import android.util.Log
-import android.view.KeyEvent
 import android.view.LayoutInflater
+import android.view.View
 import android.widget.RelativeLayout
-import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.flexbox.FlexboxLayoutManager
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_ETEN26_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_HSU_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_PHYSICAL_KEYBOARD_LAYOUT
@@ -48,12 +46,18 @@ import org.ghostsinthelab.apps.guilelessbopomofo.databinding.KeyboardQwertyLayou
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.Layout
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.virtual.ShiftKey
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
 import org.greenrobot.eventbus.EventBus
 
 class KeyboardPanel(
     context: Context, attrs: AttributeSet,
 ) : RelativeLayout(context, attrs) {
     private val logTag: String = "KeyboardPanel"
+
+    companion object {
+        // How many candidates a column of the grid holds.
+        private const val CANDIDATE_GRID_ROWS = 4
+    }
 
     internal var lastChewingCursor: Int = 0
     private var currentCandidatesList: Int = 0
@@ -76,7 +80,7 @@ class KeyboardPanel(
 
     var currentLayout: Layout = Layout.MAIN
 
-    val sharedPreferences: SharedPreferences = context.getSharedPreferences(APP_SHARED_PREFERENCES, AppCompatActivity.MODE_PRIVATE)
+    val sharedPreferences: SharedPreferences = context.appSharedPreferences
 
     init {
         Log.d(logTag, "Building KeyboardLayout.")
@@ -109,23 +113,13 @@ class KeyboardPanel(
     fun switchToLayout(layout: Layout) {
         currentLayout = layout
         when (layout) {
-            Layout.MAIN -> {
-                switchToMainLayout()
-            }
-
-            Layout.CANDIDATES -> {
-                switchToCandidatesLayout()
-            }
-
-            Layout.SYMBOLS -> {
-                switchToSymbolPicker()
-            }
-
-            Layout.COMPACT -> {
-                switchToCompactLayout()
-            }
-
-            else -> {}
+            Layout.MAIN -> switchToMainLayout()
+            Layout.CANDIDATES -> switchToCandidatesLayout()
+            Layout.SYMBOLS -> switchToSymbolPicker()
+            Layout.COMPACT -> switchToCompactLayout()
+            // QWERTY is never asked for by name: switchToMainLayout() picks it from the
+            // current Chinese / alphanumerical mode.
+            Layout.QWERTY -> switchToMainLayout()
         }
     }
 
@@ -162,21 +156,19 @@ class KeyboardPanel(
                 renderedLayout = RenderedLayout.COMPACT
             }
 
-        if (ChewingBridge.chewing.getChiEngMode() == ChiEngMode.CHINESE.mode) {
-            binding.textViewCurrentModeValue.text = resources.getString(R.string.mode_bopomofo)
-        } else {
-            binding.textViewCurrentModeValue.text = resources.getString(R.string.mode_alphanumerical)
-        }
-
-        when (ChewingBridge.chewing.getShapeMode()) {
-            ShapeMode.HALF.mode -> {
-                binding.textViewCurrentWidthModeValue.text = resources.getString(R.string.half_width_mode)
+        binding.textViewCurrentModeValue.text =
+            if (ChewingBridge.chewing.getChiEngMode() == ChiEngMode.CHINESE.mode) {
+                resources.getString(R.string.mode_bopomofo)
+            } else {
+                resources.getString(R.string.mode_alphanumerical)
             }
 
-            ShapeMode.FULL.mode -> {
-                binding.textViewCurrentWidthModeValue.text = resources.getString(R.string.full_width_mode)
+        binding.textViewCurrentWidthModeValue.text =
+            if (ChewingBridge.chewing.getShapeMode() == ShapeMode.FULL.mode) {
+                resources.getString(R.string.full_width_mode)
+            } else {
+                resources.getString(R.string.half_width_mode)
             }
-        }
     }
 
     private fun switchToBopomofoLayout() {
@@ -206,36 +198,37 @@ class KeyboardPanel(
 
         this.removeAllViews()
         renderedLayout = RenderedLayout.BOPOMOFO
+        this.addView(inflateBopomofoKeyboard(userSoftKeyboardLayoutPreference))
+    }
 
+    /**
+     * The on-screen keyboard the given layout preference asks for. Anything unheard of, a
+     * preference left over from an older release say, gets the default Dachen keyboard
+     * rather than no keyboard at all.
+     */
+    private fun inflateBopomofoKeyboard(softKeyboardLayout: String?): View {
         val inflater = LayoutInflater.from(context)
-        when (userSoftKeyboardLayoutPreference) {
-            BopomofoSoftKeyboards.KB_HSU.layout -> {
+        return when (softKeyboardLayout) {
+            BopomofoSoftKeyboards.KB_HSU.layout ->
                 if (sharedPreferences.getBoolean(USER_DISPLAY_HSU_QWERTY_LAYOUT, false)) {
-                    this.addView(KeyboardHsuQwertyLayoutBinding.inflate(inflater).root)
+                    KeyboardHsuQwertyLayoutBinding.inflate(inflater).root
                 } else {
-                    this.addView(KeyboardHsuLayoutBinding.inflate(inflater).root)
+                    KeyboardHsuLayoutBinding.inflate(inflater).root
                 }
-            }
 
-            BopomofoSoftKeyboards.KB_ET26.layout -> {
+            BopomofoSoftKeyboards.KB_ET26.layout ->
                 if (sharedPreferences.getBoolean(USER_DISPLAY_ETEN26_QWERTY_LAYOUT, false)) {
-                    this.addView(KeyboardEt26QwertyLayoutBinding.inflate(inflater).root)
+                    KeyboardEt26QwertyLayoutBinding.inflate(inflater).root
                 } else {
-                    this.addView(KeyboardEt26LayoutBinding.inflate(inflater).root)
+                    KeyboardEt26LayoutBinding.inflate(inflater).root
                 }
-            }
 
-            BopomofoSoftKeyboards.KB_ET.layout -> {
-                this.addView(KeyboardEt41LayoutBinding.inflate(inflater).root)
-            }
+            BopomofoSoftKeyboards.KB_ET.layout -> KeyboardEt41LayoutBinding.inflate(inflater).root
 
-            BopomofoSoftKeyboards.KB_DEFAULT.layout -> {
-                this.addView(KeyboardDachenLayoutBinding.inflate(inflater).root)
-            }
+            BopomofoSoftKeyboards.KB_DACHEN_CP26.layout ->
+                KeyboardDachenCp26LayoutBinding.inflate(inflater).root
 
-            BopomofoSoftKeyboards.KB_DACHEN_CP26.layout -> {
-                this.addView(KeyboardDachenCp26LayoutBinding.inflate(inflater).root)
-            }
+            else -> KeyboardDachenLayoutBinding.inflate(inflater).root
         }
     }
 
@@ -262,13 +255,10 @@ class KeyboardPanel(
         renderCandidatesLayout()
     }
 
-    fun candidateKeySelected(keyEvent: KeyEvent) {
+    /** A selection key was pressed while the candidates were on screen. */
+    fun candidateKeySelected() {
         if (ChewingUtil.candidateWindowClosed()) {
-            ChewingBridge.chewing.candClose()
-            currentCandidatesList = 0
-            candidatesRecyclerView.adapter = null
-            EventBus.getDefault().post(Events.UpdateBufferViews())
-            switchToMainLayout()
+            leaveCandidatesLayout(moveCursorToEnd = false)
         } else {
             // enter to candidate sublist
             renderCandidatesLayout()
@@ -278,16 +268,25 @@ class KeyboardPanel(
     fun candidateButtonSelected(candidate: Candidate) {
         ChewingBridge.chewing.candChooseByIndex(candidate.index)
         if (ChewingUtil.candidateWindowClosed()) {
-            ChewingBridge.chewing.candClose()
-            currentCandidatesList = 0
-            candidatesRecyclerView.adapter = null
-            EventBus.getDefault().post(Events.UpdateBufferViews())
-            EventBus.getDefault().post(Events.UpdateCursorPositionToEnd())
-            switchToMainLayout()
+            leaveCandidatesLayout(moveCursorToEnd = true)
         } else {
             // enter to candidate sublist
             renderCandidatesLayout()
         }
+    }
+
+    /**
+     * Nothing left to choose from: put the candidates away and show the keyboard again.
+     */
+    private fun leaveCandidatesLayout(moveCursorToEnd: Boolean) {
+        ChewingBridge.chewing.candClose()
+        currentCandidatesList = 0
+        candidatesRecyclerView.adapter = null
+        EventBus.getDefault().post(Events.UpdateBufferViews())
+        if (moveCursorToEnd) {
+            EventBus.getDefault().post(Events.UpdateCursorPositionToEnd())
+        }
+        switchToMainLayout()
     }
 
     // list current offset's candidates in the candidate window
@@ -328,11 +327,9 @@ class KeyboardPanel(
         renderedLayout = null
         this.addView(candidatesLayoutBinding.root)
 
-        if (physicalKeyboardPresented) {
-            renderCandidatesLayout(CandidateLayoutStyle.LIST)
-        } else {
-            renderCandidatesLayout(CandidateLayoutStyle.GRID)
-        }
+        renderCandidatesLayout(
+            if (physicalKeyboardPresented) CandidateLayoutStyle.LIST else CandidateLayoutStyle.GRID
+        )
     }
 
     private fun renderCandidatesLayout(candidateLayoutStyle: CandidateLayoutStyle) {
@@ -344,7 +341,9 @@ class KeyboardPanel(
 
             CandidateLayoutStyle.GRID -> {
                 candidatesRecyclerView.adapter = CandidatesAdapter()
-                candidatesRecyclerView.layoutManager = GridLayoutManager(context, 4, LinearLayoutManager.HORIZONTAL, false)
+                candidatesRecyclerView.layoutManager = GridLayoutManager(
+                    context, CANDIDATE_GRID_ROWS, LinearLayoutManager.HORIZONTAL, false
+                )
             }
         }
     }

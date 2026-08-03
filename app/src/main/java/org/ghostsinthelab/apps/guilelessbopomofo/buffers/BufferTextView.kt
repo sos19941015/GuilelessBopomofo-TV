@@ -28,13 +28,24 @@ import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
 
 abstract class BufferTextView(context: Context, attrs: AttributeSet) :
     AppCompatTextView(context, attrs), DisplayMetricsComputable {
-    abstract var mDetector: GestureDetector
 
     abstract class GestureListener : GestureDetector.SimpleOnGestureListener(), Vibratable
 
+    /** The gestures this buffer answers to. */
+    protected abstract fun createGestureListener(): GestureDetector.SimpleOnGestureListener
+
+    /** Whether a quick second tap is a gesture of its own. */
+    protected open val detectsDoubleTap: Boolean = false
+
+    private val gestureDetector: GestureDetector by lazy(LazyThreadSafetyMode.NONE) {
+        GestureDetector(context, createGestureListener()).also {
+            if (!detectsDoubleTap) it.setOnDoubleTapListener(null)
+        }
+    }
+
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         if (event != null) {
-            mDetector.onTouchEvent(event)
+            gestureDetector.onTouchEvent(event)
         }
         return true
     }

@@ -19,17 +19,13 @@
 package org.ghostsinthelab.apps.guilelessbopomofo.utils
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
-import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_HAPTIC_FEEDBACK_STRENGTH
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoService
-import kotlin.properties.Delegates
 
 interface Vibratable {
     enum class VibrationStrength(val strength: Int) {
@@ -39,57 +35,45 @@ interface Vibratable {
     val vibrationMilliSeconds: Long
         get() = 50
 
-    fun <T> performVibration(context: Context, vibrationStrength: T) {
-        val vibrator = ContextCompat.getSystemService(context, Vibrator::class.java) as Vibrator
+    fun performVibration(context: Context, vibrationStrength: VibrationStrength) {
+        performVibration(context, vibrationStrength.strength)
+    }
+
+    fun performVibration(context: Context, amplitude: Int) {
+        val vibrator = ContextCompat.getSystemService(context, Vibrator::class.java) ?: return
 
         // If device doesn't have vibrator, do nothing (e.g: many tablets)
         if (!vibrator.hasVibrator()) {
             return
         }
 
-        var amplitude by Delegates.notNull<Int>()
-
-        when (vibrationStrength) {
-            is VibrationStrength -> {
-                amplitude = vibrationStrength.strength
-            }
-
-            is Int -> {
-                amplitude = vibrationStrength.toInt()
-            }
-        }
-
         // reduces UI blocking by vibrator (if user be typing too fast)
         vibrator.cancel()
 
         // If users want to use a consistent haptic feedback value for all buttons,
-        // just do as they wish.
-        val sharedPreferences: SharedPreferences =
-            context.getSharedPreferences(APP_SHARED_PREFERENCES, AppCompatActivity.MODE_PRIVATE)
-        val hapticFeedbackPreferenceStrength: Int = sharedPreferences.getInt(
-            USER_HAPTIC_FEEDBACK_STRENGTH, GuilelessBopomofoService.defaultHapticFeedbackStrength
-        )
-        val sameHapticFeedbackToFuncButtons: Boolean =
-            sharedPreferences.getBoolean(SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS, false)
-        if (sameHapticFeedbackToFuncButtons) {
-            // might be 0
-            amplitude = hapticFeedbackPreferenceStrength
-        }
+        // just do as they wish. (might be 0)
+        val sharedPreferences = context.appSharedPreferences
+        val effectiveAmplitude: Int =
+            if (sharedPreferences.getBoolean(SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS, false)) {
+                sharedPreferences.getInt(
+                    USER_HAPTIC_FEEDBACK_STRENGTH, GuilelessBopomofoService.defaultHapticFeedbackStrength
+                )
+            } else {
+                amplitude
+            }
 
         // do nothing if user set vibration strength to 0
-        if (amplitude == 0) {
+        if (effectiveAmplitude == 0) {
             return
         }
 
         // perform vibration
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val vibrationEffect =
-                VibrationEffect.createOneShot(vibrationMilliSeconds, amplitude)
-            vibrator.vibrate(vibrationEffect)
+            vibrator.vibrate(VibrationEffect.createOneShot(vibrationMilliSeconds, effectiveAmplitude))
         } else {
             @Suppress("DEPRECATION")
             // deprecated in API 26 (Android 8.0), for older devices, we just support time-based vibration. (treat amplitude as time in milliseconds)
-            vibrator.vibrate(amplitude.toLong())
+            vibrator.vibrate(effectiveAmplitude.toLong())
         }
     }
 }

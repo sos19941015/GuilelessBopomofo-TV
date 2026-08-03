@@ -20,7 +20,6 @@ package org.ghostsinthelab.apps.guilelessbopomofo.keys.virtual
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH
@@ -32,10 +31,12 @@ import org.greenrobot.eventbus.EventBus
 
 class ImeSwitchFunctionKey(context: Context, attrs: AttributeSet) :
     KeyImageButton(context, attrs) {
-    override var mDetector: GestureDetector
+
+    override fun createGestureListener() = MyGestureListener()
+
+    override val detectsDoubleTap: Boolean = true
 
     init {
-        mDetector = GestureDetector(context, MyGestureListener())
         setKeyVisibility()
     }
 

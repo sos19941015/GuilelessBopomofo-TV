@@ -23,25 +23,44 @@ import android.content.SharedPreferences
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
-import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.button.MaterialButton
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_KEY_BUTTON_HEIGHT
 import org.ghostsinthelab.apps.guilelessbopomofo.R
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.DisplayMetricsComputable
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
 
-abstract class KeyImageButton(context: Context, attrs: AttributeSet) : MaterialButton(context, attrs, R.attr.imageButtonStyle),
+abstract class KeyImageButton(context: Context, attrs: AttributeSet) :
+    MaterialButton(context, attrs, R.attr.imageButtonStyle),
     BehaveLikeKey<KeyImageButton>, DisplayMetricsComputable, Vibratable {
+    companion object {
+        private const val DEFAULT_KEY_BUTTON_HEIGHT_DP = 52
+    }
+
     open val logTag: String = "KeyImageButton"
-    val sharedPreferences: SharedPreferences = context.getSharedPreferences(APP_SHARED_PREFERENCES, AppCompatActivity.MODE_PRIVATE)
+    val sharedPreferences: SharedPreferences = context.appSharedPreferences
     override var keyCodeString: String? = null
-    abstract var mDetector: GestureDetector
+
     abstract class GestureListener : GestureDetector.SimpleOnGestureListener(), Vibratable
+
+    /** The gestures this key answers to. */
+    protected abstract fun createGestureListener(): GestureDetector.SimpleOnGestureListener
+
+    /**
+     * Whether a quick second tap is a gesture of its own. Leaving it off is what an ordinary
+     * key wants: every tap counts, none of them is held back waiting for its twin.
+     */
+    protected open val detectsDoubleTap: Boolean = false
+
+    private val gestureDetector: GestureDetector by lazy(LazyThreadSafetyMode.NONE) {
+        GestureDetector(context, createGestureListener()).also {
+            if (!detectsDoubleTap) it.setOnDoubleTapListener(null)
+        }
+    }
 
     override fun onTouchEvent(event: MotionEvent?): Boolean {
         if (event != null) {
-            mDetector.onTouchEvent(event)
+            gestureDetector.onTouchEvent(event)
         }
         return super.onTouchEvent(event)
     }
@@ -55,9 +74,8 @@ abstract class KeyImageButton(context: Context, attrs: AttributeSet) : MaterialB
             }
         }
 
-        this.apply {
-            val keyButtonPreferenceHeight = sharedPreferences.getInt(USER_KEY_BUTTON_HEIGHT, 52)
-            minimumHeight = convertDpToPx(keyButtonPreferenceHeight.toFloat()).toInt()
-        }
+        val keyButtonPreferenceHeight =
+            sharedPreferences.getInt(USER_KEY_BUTTON_HEIGHT, DEFAULT_KEY_BUTTON_HEIGHT_DP)
+        minimumHeight = convertDpToPx(keyButtonPreferenceHeight.toFloat()).toInt()
     }
 }

@@ -22,38 +22,36 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.os.SystemClock
 import android.util.AttributeSet
-import android.view.GestureDetector
 import android.view.MotionEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.ghostsinthelab.apps.guilelessbopomofo.ChewingUtil
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.KeyImageButton
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
-import org.greenrobot.eventbus.EventBus
-import kotlin.concurrent.fixedRateTimer
 import kotlin.coroutines.CoroutineContext
 
 class BackspaceKey(context: Context, attrs: AttributeSet) :
     KeyImageButton(context, attrs), CoroutineScope {
     private var backspacePressed: Boolean = false
-    var lastBackspaceClickTime: Long = 0
+    private var lastBackspaceClickTime: Long = 0
+    private var repeatingBackspace: Job? = null
 
     companion object {
         private const val BACKSPACE_DEBOUNCE_MS = 100L
         private const val BACKSPACE_REPEAT_INITIAL_DELAY_MS = 50L
         private const val BACKSPACE_REPEAT_INTERVAL_MS = 100L
     }
-    override var mDetector: GestureDetector
 
+    // Deleting goes through libchewing, whose context may only be touched from the main
+    // thread, so the repeat has to keep to it as well.
     override val coroutineContext: CoroutineContext
-        get() = Dispatchers.Default
+        get() = Dispatchers.Main
 
-    init {
-        mDetector = GestureDetector(context, MyGestureListener())
-        mDetector.setOnDoubleTapListener(null)
-    }
+    override fun createGestureListener() = MyGestureListener()
 
     inner class MyGestureListener : GestureListener() {
         override fun onDown(e: MotionEvent): Boolean {
@@ -73,7 +71,7 @@ class BackspaceKey(context: Context, attrs: AttributeSet) :
         }
 
         override fun onLongPress(e: MotionEvent) {
-            launch { repeatBackspace() }
+            startRepeatingBackspace()
         }
     }
 
@@ -82,35 +80,35 @@ class BackspaceKey(context: Context, attrs: AttributeSet) :
         super.onTouchEvent(event)
         event?.let {
             when (it.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    backspacePressed = true
-                }
-
-                MotionEvent.ACTION_MOVE -> {
-                    backspacePressed = true
-                }
-
-                MotionEvent.ACTION_UP -> {
-                    backspacePressed = false
-                }
-
-                MotionEvent.ACTION_CANCEL -> {
-                    backspacePressed = false
-                }
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE -> backspacePressed = true
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> backspacePressed = false
             }
         }
         return true
     }
 
-    private suspend fun repeatBackspace() {
-        fixedRateTimer("repeatBackspace", true, BACKSPACE_REPEAT_INITIAL_DELAY_MS, BACKSPACE_REPEAT_INTERVAL_MS) {
-            if (backspacePressed) {
+    override fun onDetachedFromWindow() {
+        stopRepeatingBackspace()
+        super.onDetachedFromWindow()
+    }
+
+    /**
+     * Keeps deleting for as long as the key is held down.
+     */
+    private fun startRepeatingBackspace() {
+        stopRepeatingBackspace()
+        repeatingBackspace = launch {
+            delay(BACKSPACE_REPEAT_INITIAL_DELAY_MS)
+            while (isActive && backspacePressed) {
                 performKeyStroke()
-            } else {
-                this@fixedRateTimer.cancel()
+                delay(BACKSPACE_REPEAT_INTERVAL_MS)
             }
         }
-        delay(BACKSPACE_REPEAT_INITIAL_DELAY_MS)
+    }
+
+    private fun stopRepeatingBackspace() {
+        repeatingBackspace?.cancel()
+        repeatingBackspace = null
     }
 
     private fun performKeyStroke() {

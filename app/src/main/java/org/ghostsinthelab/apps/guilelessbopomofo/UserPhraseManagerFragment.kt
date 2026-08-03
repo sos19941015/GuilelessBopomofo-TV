@@ -29,8 +29,8 @@ import android.view.ViewGroup
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.core.view.isVisible
-import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.ghostsinthelab.apps.guilelessbopomofo.databinding.DialogAddUserPhraseBinding
@@ -39,11 +39,9 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 
-class UserPhraseManagerFragment : Fragment() {
+class UserPhraseManagerFragment : ViewBindingFragment<FragmentUserPhraseManagerBinding>() {
     private val logTag = "UserPhraseManager"
 
-    private var _binding: FragmentUserPhraseManagerBinding? = null
-    private val binding get() = _binding!!
     private lateinit var adapter: UserPhraseAdapter
 
     private val backupLauncher = registerForActivityResult(
@@ -58,10 +56,8 @@ class UserPhraseManagerFragment : Fragment() {
         uri?.let { importUserPhrases(it) }
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
-        _binding = FragmentUserPhraseManagerBinding.inflate(inflater, container, false)
-        return binding.root
-    }
+    override fun inflateBinding(inflater: LayoutInflater, container: ViewGroup?) =
+        FragmentUserPhraseManagerBinding.inflate(inflater, container, false)
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -100,14 +96,8 @@ class UserPhraseManagerFragment : Fragment() {
         }
     }
 
-    override fun onDestroyView() {
-        super.onDestroyView()
-        _binding = null
-    }
-
     private fun loadUserPhrases() {
-        val phrases = ChewingUtil.enumerateUserPhrases()
-        adapter.setData(phrases)
+        adapter.setData(ChewingUtil.enumerateUserPhrases())
         val query = binding.editTextSearch.text?.toString()?.trim() ?: ""
         if (query.isNotEmpty()) {
             adapter.filter(query)
@@ -117,13 +107,21 @@ class UserPhraseManagerFragment : Fragment() {
 
     private fun updateEmptyState(query: String) {
         val isEmpty = adapter.itemCount == 0
-        binding.textViewEmptyState.visibility = if (isEmpty) View.VISIBLE else View.GONE
-        binding.recyclerViewUserPhrases.visibility = if (isEmpty) View.GONE else View.VISIBLE
+        binding.textViewEmptyState.isVisible = isEmpty
+        binding.recyclerViewUserPhrases.isVisible = !isEmpty
         binding.textViewEmptyState.text = if (query.isNotEmpty()) {
             getString(R.string.search_user_phrases_no_results)
         } else {
             getString(R.string.no_user_phrases)
         }
+    }
+
+    private fun toast(@StringRes message: Int, duration: Int = Toast.LENGTH_SHORT) {
+        Toast.makeText(requireContext(), message, duration).show()
+    }
+
+    private fun toast(message: String, duration: Int = Toast.LENGTH_SHORT) {
+        Toast.makeText(requireContext(), message, duration).show()
     }
 
     private fun confirmDeletePhrase(userPhrase: UserPhrase) {
@@ -142,194 +140,78 @@ class UserPhraseManagerFragment : Fragment() {
     private fun exportUserPhrases(uri: Uri) {
         val phrases = ChewingUtil.enumerateUserPhrases()
         if (phrases.isEmpty()) {
-            Toast.makeText(requireContext(), R.string.no_user_phrases, Toast.LENGTH_SHORT).show()
+            toast(R.string.no_user_phrases)
             return
         }
 
         try {
             requireContext().contentResolver.openOutputStream(uri)?.use { outputStream ->
                 OutputStreamWriter(outputStream, Charsets.UTF_8).use { writer ->
-                    writer.write("\"phrase\",\"bopomofo\"\n")
-                    for (phrase in phrases) {
-                        writer.write("\"${escapeCsvField(phrase.phrase)}\",\"${escapeCsvField(phrase.bopomofo)}\"\n")
-                    }
+                    writer.write(UserPhraseCsv.format(phrases))
                 }
             }
-            Toast.makeText(
-                requireContext(),
-                getString(R.string.backup_success, phrases.size),
-                Toast.LENGTH_SHORT
-            ).show()
+            toast(getString(R.string.backup_success, phrases.size))
         } catch (e: Exception) {
             Log.e(logTag, "Failed to export user phrases", e)
-            Toast.makeText(requireContext(), R.string.backup_failed, Toast.LENGTH_SHORT).show()
+            toast(R.string.backup_failed)
         }
     }
 
     private fun importUserPhrases(uri: Uri) {
         try {
-            val lines = mutableListOf<String>()
-            requireContext().contentResolver.openInputStream(uri)?.use { inputStream ->
-                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { reader ->
-                    lines.addAll(reader.readLines())
+            val lines = requireContext().contentResolver.openInputStream(uri)?.use { inputStream ->
+                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { it.readLines() }
+            } ?: emptyList()
+
+            when (val result = UserPhraseCsv.parse(lines)) {
+                is UserPhraseCsv.ParseResult.Success -> confirmRestore(result.phrases)
+                else -> {
+                    val message = describeParseFailure(result)
+                    Log.w(logTag, "CSV validation failed: $message")
+                    toast(message, Toast.LENGTH_LONG)
                 }
             }
-
-            val result = validateAndParseCsv(lines)
-            if (result.error != null) {
-                Log.w(logTag, "CSV validation failed: ${result.error}")
-                Toast.makeText(requireContext(), result.error, Toast.LENGTH_LONG).show()
-                return
-            }
-
-            val phrases = result.phrases
-            if (phrases.isEmpty()) {
-                Toast.makeText(requireContext(), R.string.restore_no_data, Toast.LENGTH_SHORT).show()
-                return
-            }
-
-            MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.restore_user_phrases)
-                .setMessage(getString(R.string.restore_confirm_message, phrases.size))
-                .setPositiveButton(R.string.restore_user_phrases) { _, _ ->
-                    var added = 0
-                    for (phrase in phrases) {
-                        val result = ChewingBridge.chewing.userphraseAdd(phrase.phrase, phrase.bopomofo)
-                        if (result > 0) added++
-                    }
-                    ChewingUtil.flushContext(requireContext())
-                    loadUserPhrases()
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.restore_success, added),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
         } catch (e: Exception) {
             Log.e(logTag, "Failed to import user phrases", e)
-            Toast.makeText(requireContext(), R.string.restore_failed, Toast.LENGTH_SHORT).show()
+            toast(R.string.restore_failed)
         }
     }
 
-    private data class CsvParseResult(
-        val phrases: List<UserPhrase> = emptyList(),
-        val error: String? = null,
-    )
+    private fun describeParseFailure(result: UserPhraseCsv.ParseResult): String = when (result) {
+        is UserPhraseCsv.ParseResult.UnreadableFile -> getString(R.string.restore_invalid_file)
+        is UserPhraseCsv.ParseResult.UnexpectedHeader -> getString(R.string.restore_invalid_header)
+        is UserPhraseCsv.ParseResult.MalformedRow ->
+            getString(R.string.restore_malformed_row, result.lineNumber)
 
-    private fun validateAndParseCsv(lines: List<String>): CsvParseResult {
-        if (lines.isEmpty()) {
-            return CsvParseResult(error = getString(R.string.restore_invalid_file))
-        }
+        is UserPhraseCsv.ParseResult.InvalidBopomofo ->
+            getString(R.string.restore_invalid_bopomofo, result.lineNumber)
 
-        // File size sanity check (reject files over 1MB worth of lines)
-        val totalLength = lines.sumOf { it.length }
-        if (totalLength > 1_000_000) {
-            return CsvParseResult(error = getString(R.string.restore_invalid_file))
-        }
-
-        // Validate header row
-        val headerLine = lines.first().trim()
-        if (headerLine != "\"phrase\",\"bopomofo\"") {
-            return CsvParseResult(error = getString(R.string.restore_invalid_header))
-        }
-
-        val phrases = mutableListOf<UserPhrase>()
-        for ((index, line) in lines.withIndex()) {
-            if (index == 0) continue // skip header
-            if (line.isBlank()) continue
-
-            val parsed = parseCsvLine(line)
-
-            // Each row must have exactly 2 fields
-            if (parsed.size != 2) {
-                return CsvParseResult(
-                    error = getString(R.string.restore_malformed_row, index + 1)
-                )
-            }
-
-            val phrase = parsed[0]
-            val bopomofo = parsed[1]
-
-            // Both fields must be non-empty
-            if (phrase.isEmpty() || bopomofo.isEmpty()) {
-                return CsvParseResult(
-                    error = getString(R.string.restore_malformed_row, index + 1)
-                )
-            }
-
-            // Reject fields with control characters (null bytes, etc.)
-            if (phrase.any { it.isISOControl() } || bopomofo.any { it.isISOControl() }) {
-                return CsvParseResult(
-                    error = getString(R.string.restore_malformed_row, index + 1)
-                )
-            }
-
-            // Reject excessively long fields
-            if (phrase.length > 100 || bopomofo.length > 200) {
-                return CsvParseResult(
-                    error = getString(R.string.restore_malformed_row, index + 1)
-                )
-            }
-
-            // Validate bopomofo contains only valid bopomofo characters, tones, and spaces
-            if (!isValidBopomofo(bopomofo)) {
-                return CsvParseResult(
-                    error = getString(R.string.restore_invalid_bopomofo, index + 1)
-                )
-            }
-
-            phrases.add(UserPhrase(phrase, bopomofo))
-        }
-
-        return CsvParseResult(phrases = phrases)
+        is UserPhraseCsv.ParseResult.Success -> ""
     }
 
-    private fun isValidBopomofo(bopomofo: String): Boolean {
-        return bopomofo.all { char ->
-            char == ' '
-                    || char in '\u3100'..'\u312F' // Bopomofo block
-                    || char in '\u31A0'..'\u31BF' // Bopomofo Extended block
-                    || char == 'ˊ' || char == 'ˇ' || char == 'ˋ' || char == '˙' // tone marks
+    private fun confirmRestore(phrases: List<UserPhrase>) {
+        if (phrases.isEmpty()) {
+            toast(R.string.restore_no_data)
+            return
         }
-    }
 
-    private fun escapeCsvField(field: String): String {
-        return field.replace("\"", "\"\"")
-    }
-
-    private fun parseCsvLine(line: String): List<String> {
-        val fields = mutableListOf<String>()
-        val current = StringBuilder()
-        var inQuotes = false
-        var i = 0
-
-        while (i < line.length) {
-            val c = line[i]
-            when {
-                c == '"' && !inQuotes -> inQuotes = true
-                c == '"' && inQuotes -> {
-                    if (i + 1 < line.length && line[i + 1] == '"') {
-                        current.append('"')
-                        i++
-                    } else {
-                        inQuotes = false
-                    }
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.restore_user_phrases)
+            .setMessage(getString(R.string.restore_confirm_message, phrases.size))
+            .setPositiveButton(R.string.restore_user_phrases) { _, _ ->
+                val added = phrases.count {
+                    ChewingBridge.chewing.userphraseAdd(it.phrase, it.bopomofo) > 0
                 }
-                c == ',' && !inQuotes -> {
-                    fields.add(current.toString())
-                    current.clear()
-                }
-                else -> current.append(c)
+                ChewingUtil.flushContext(requireContext())
+                loadUserPhrases()
+                toast(getString(R.string.restore_success, added))
             }
-            i++
-        }
-        fields.add(current.toString())
-        return fields
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     private fun confirmResetUserPhraseData() {
+        // Asked twice on purpose: there is no undo for this one.
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.reset_user_phrase_data)
             .setMessage(R.string.reset_user_phrase_data_confirm_first)
@@ -340,7 +222,7 @@ class UserPhraseManagerFragment : Fragment() {
                     .setPositiveButton(R.string.reset_user_phrase_data) { _, _ ->
                         ChewingUtil.resetUserPhraseData(requireContext())
                         loadUserPhrases()
-                        Toast.makeText(requireContext(), R.string.reset_user_phrase_data_done, Toast.LENGTH_SHORT).show()
+                        toast(R.string.reset_user_phrase_data_done)
                     }
                     .setNegativeButton(android.R.string.cancel, null)
                     .show()
@@ -359,16 +241,13 @@ class UserPhraseManagerFragment : Fragment() {
 
             val combinations = BopomofoLookup.generateCombinations(phrase)
             if (combinations.isEmpty()) {
-                Toast.makeText(requireContext(), R.string.analyze_bopomofo_no_results, Toast.LENGTH_SHORT).show()
+                toast(R.string.analyze_bopomofo_no_results)
                 return@setOnClickListener
             }
 
-            val adapter = ArrayAdapter(
-                requireContext(),
-                android.R.layout.simple_dropdown_item_1line,
-                combinations
+            dialogBinding.autoCompleteBopomofo.setAdapter(
+                ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, combinations)
             )
-            dialogBinding.autoCompleteBopomofo.setAdapter(adapter)
             dialogBinding.autoCompleteBopomofo.setText(combinations[0], false)
             dialogBinding.textInputLayoutBopomofoDropdown.isVisible = true
             dialogBinding.textInputLayoutBopomofoManual.isVisible = false
@@ -386,16 +265,15 @@ class UserPhraseManagerFragment : Fragment() {
                 }
 
                 if (phrase.isEmpty() || bopomofo.isEmpty()) {
-                    Toast.makeText(requireContext(), R.string.user_phrase_input_empty, Toast.LENGTH_SHORT).show()
+                    toast(R.string.user_phrase_input_empty)
                     return@setPositiveButton
                 }
 
-                val result = ChewingBridge.chewing.userphraseAdd(phrase, bopomofo)
-                if (result > 0) {
+                if (ChewingBridge.chewing.userphraseAdd(phrase, bopomofo) > 0) {
                     ChewingUtil.flushContext(requireContext())
                     loadUserPhrases()
                 } else {
-                    Toast.makeText(requireContext(), R.string.user_phrase_add_failed, Toast.LENGTH_SHORT).show()
+                    toast(R.string.user_phrase_add_failed)
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)

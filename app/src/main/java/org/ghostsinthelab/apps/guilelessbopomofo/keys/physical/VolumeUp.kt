@@ -18,21 +18,7 @@
 
 package org.ghostsinthelab.apps.guilelessbopomofo.keys.physical
 
-import android.content.Context
-import android.view.KeyEvent
-import org.ghostsinthelab.apps.guilelessbopomofo.ChewingBridge
-import org.ghostsinthelab.apps.guilelessbopomofo.ChewingUtil
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.DirectionKey
-import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
-import org.greenrobot.eventbus.EventBus
 
-class VolumeUp : PhysicalKeyHandler {
-    override fun onKeyDown(context: Context, keyCode: Int, event: KeyEvent?): Boolean {
-        if (ChewingUtil.candidateWindowOpened()) {
-            // simulates Left key-down
-            ChewingBridge.chewing.handleLeft()
-            EventBus.getDefault().post(Events.DirectionKeyDown(DirectionKey.LEFT))
-        }
-        return true
-    }
-}
+// Volume up walks towards the beginning of the buffer, as the Left key does.
+class VolumeUp : VolumeKey(DirectionKey.LEFT)

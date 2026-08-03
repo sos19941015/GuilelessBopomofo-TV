@@ -48,7 +48,6 @@ import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.APP_SHARED_PREFERENCES
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CANDIDATE_SELECTION_KEYS_OPTION
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CONVERSION_ENGINE
@@ -94,10 +93,11 @@ import org.ghostsinthelab.apps.guilelessbopomofo.utils.EnterKeyBehavior
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.EnterKeyBehaviorResolver
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.KeyEventExtension
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
-import java.io.File
+import java.io.IOException
 import kotlin.coroutines.CoroutineContext
 
 class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPreferences.OnSharedPreferenceChangeListener,
@@ -110,12 +110,38 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     private var shiftKeyIsActive: Boolean = false
 
     private lateinit var viewBinding: ImeLayoutBinding
-    private lateinit var physicalKeyDispatcher: Map<Int, PhysicalKeyHandler>
     private lateinit var sharedPreferences: SharedPreferences
-    private val chewingDataFiles = ChewingUtil.listOfDataFiles()
+
+    // The physical keys we answer to ourselves. Every handler is stateless, so one instance
+    // of each lasts for the lifetime of the service.
+    private val physicalKeyDispatcher: Map<Int, PhysicalKeyHandler> = mapOf(
+        KeyEvent.KEYCODE_DPAD_DOWN to Down(),
+        KeyEvent.KEYCODE_DPAD_UP to Up(),
+        KeyEvent.KEYCODE_DPAD_LEFT to Left(),
+        KeyEvent.KEYCODE_DPAD_RIGHT to Right(),
+        KeyEvent.KEYCODE_ALT_LEFT to LeftAlt(),
+        KeyEvent.KEYCODE_SHIFT_RIGHT to RightShift(),
+        KeyEvent.KEYCODE_ENTER to Enter(),
+        KeyEvent.KEYCODE_SPACE to Space(),
+        KeyEvent.KEYCODE_ESCAPE to Escape(),
+        KeyEvent.KEYCODE_DEL to Del(),
+        KeyEvent.KEYCODE_CAPS_LOCK to CapsLock(),
+        KeyEvent.KEYCODE_MOVE_END to End(),
+        KeyEvent.KEYCODE_MOVE_HOME to Home(),
+        KeyEvent.KEYCODE_VOLUME_UP to VolumeUp(),
+        KeyEvent.KEYCODE_VOLUME_DOWN to VolumeDown(),
+        // Add more mappings here for each physical key you want to handle separately
+    )
 
     companion object {
         private const val CANDIDATES_PER_PAGE = 10
+
+        // The layouts one can leave the keyboard from, rather than merely stepping back
+        // into the main one.
+        private val DISMISSIBLE_LAYOUTS = setOf(Layout.MAIN, Layout.COMPACT, Layout.QWERTY)
+
+        // The layouts that are a detour from the main one, and can be stepped out of.
+        private val SUB_LAYOUTS = setOf(Layout.SYMBOLS, Layout.CANDIDATES)
 
         val defaultHapticFeedbackStrength: Int = Vibratable.VibrationStrength.NORMAL.strength
 
@@ -131,9 +157,6 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             deviceIsEmulator = true
         }
 
-        // register physical key handlers
-        initializePhysicalKeyDispatcher()
-
         // set Back key disposition
         backDisposition = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             BACK_DISPOSITION_ADJUST_NOTHING
@@ -141,53 +164,17 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             BACK_DISPOSITION_DEFAULT
         }
 
-        sharedPreferences = getSharedPreferences(APP_SHARED_PREFERENCES, MODE_PRIVATE)
+        sharedPreferences = appSharedPreferences
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
 
-        // Initializing Chewing
         try {
-            val dataPath = applicationInfo.dataDir
-            ChewingUtil.setupChewingData(this, dataPath)
-            ChewingBridge.chewing.connect(dataPath)
-            ChewingBridge.chewing.context.let {
-                Log.d(logTag, "Chewing context ptr: $it")
-            }
-
-            if (sharedPreferences.getBoolean(USER_ENABLE_SPACE_AS_SELECTION, true)) {
-                ChewingBridge.chewing.setSpaceAsSelection(1)
-            }
-
-            if (sharedPreferences.getBoolean(USER_PHRASE_CHOICE_REARWARD, false)) {
-                ChewingBridge.chewing.setPhraseChoiceRearward(1)
-            }
-
-            // set conversion engine (traditional, fuzzy or default (chewing))
-            applyConversionEngine()
-
-            ChewingBridge.chewing.setChiEngMode(ChiEngMode.CHINESE.mode)
-            ChewingBridge.chewing.setCandPerPage(CANDIDATES_PER_PAGE)
-            ChewingBridge.chewing.configSetInt("chewing.sort_candidates_by_frequency", 1)
-
-            sharedPreferences.getString(
-                USER_CANDIDATE_SELECTION_KEYS_OPTION, SelectionKeys.NUMBER_ROW.set
-            )?.let {
-                ChewingBridge.chewing.setSelKey(SelectionKeys.valueOf(it).keys, CANDIDATES_PER_PAGE)
-            }
+            initializeChewing()
         } catch (exception: UnsatisfiedLinkError) {
-            ChewingBridge.chewing.context = 0
-            val exceptionDescription: String = getString(R.string.libchewing_init_fail, exception.message)
-            Toast.makeText(applicationContext, exceptionDescription, Toast.LENGTH_LONG).show()
-            Log.e(logTag, "Failed to load native library", exception)
+            reportChewingInitFailure("Failed to load native library", exception)
         } catch (exception: Chewing.ChewingInitException) {
-            ChewingBridge.chewing.context = 0
-            val exceptionDescription: String = getString(R.string.libchewing_init_fail, exception.message)
-            Toast.makeText(applicationContext, exceptionDescription, Toast.LENGTH_LONG).show()
-            Log.e(logTag, "Failed to initialize Chewing", exception)
-        } catch (exception: java.io.IOException) {
-            ChewingBridge.chewing.context = 0
-            val exceptionDescription: String = getString(R.string.libchewing_init_fail, exception.message)
-            Toast.makeText(applicationContext, exceptionDescription, Toast.LENGTH_LONG).show()
-            Log.e(logTag, "Failed to setup Chewing data", exception)
+            reportChewingInitFailure("Failed to initialize Chewing", exception)
+        } catch (exception: IOException) {
+            reportChewingInitFailure("Failed to setup Chewing data", exception)
         }
 
         // Register EventBus after initialization so handlers won't fire on uninitialized state
@@ -208,23 +195,15 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     override fun onEvaluateFullscreenMode(): Boolean {
         Log.d(logTag, "onEvaluateFullscreenMode()")
 
-        if (sharedPreferences.getBoolean(
-                USER_FULLSCREEN_WHEN_IN_LANDSCAPE, true
-            ) && resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        ) {
-            Log.d(logTag, "Now on landscape orientation.")
-            return true
-        }
+        return when (resources.configuration.orientation) {
+            Configuration.ORIENTATION_LANDSCAPE ->
+                sharedPreferences.getBoolean(USER_FULLSCREEN_WHEN_IN_LANDSCAPE, true)
 
-        if (sharedPreferences.getBoolean(
-                USER_FULLSCREEN_WHEN_IN_PORTRAIT, false
-            ) && resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        ) {
-            Log.d(logTag, "Now on portrait orientation.")
-            return true
-        }
+            Configuration.ORIENTATION_PORTRAIT ->
+                sharedPreferences.getBoolean(USER_FULLSCREEN_WHEN_IN_PORTRAIT, false)
 
-        return false
+            else -> false
+        }
     }
 
     override fun onCreateInputView(): View {
@@ -236,26 +215,11 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         return viewBinding.root
     }
 
-    override fun onInitializeInterface() {
-        Log.d(logTag, "onInitializeInterface()")
-        super.onInitializeInterface()
-    }
-
     override fun onEvaluateInputViewShown(): Boolean {
         Log.d(logTag, "onEvaluateInputViewShown()")
         super.onEvaluateInputViewShown()
         // always show the input view whether physical keyboard is connected or not
         return true
-    }
-
-    override fun onBindInput() {
-        Log.d(logTag, "onBindInput()")
-        super.onBindInput()
-    }
-
-    override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
-        Log.d(logTag, "onStartInput()")
-        super.onStartInput(attribute, restarting)
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -270,21 +234,14 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         // re-apply the conversion engine to match the just-detected keyboard state
         applyConversionEngine()
 
-        val inputType = info?.inputType?.and(InputType.TYPE_MASK_CLASS)
         // if the input type is phone or number, switch to symbol (alphanumeric) mode
-        when (inputType) {
-            InputType.TYPE_CLASS_PHONE, InputType.TYPE_CLASS_NUMBER -> {
-                ChewingBridge.chewing.setChiEngMode(ChiEngMode.SYMBOL.mode)
-            }
+        val inputType = info?.inputType?.and(InputType.TYPE_MASK_CLASS)
+        if (inputType == InputType.TYPE_CLASS_PHONE || inputType == InputType.TYPE_CLASS_NUMBER) {
+            ChewingBridge.chewing.setChiEngMode(ChiEngMode.SYMBOL.mode)
         }
 
         viewBinding.keyboardPanel.switchToLayout(Layout.MAIN)
         EventBus.getDefault().post(Events.UpdateBufferViews())
-    }
-
-    override fun onFinishInput() {
-        super.onFinishInput()
-        Log.d(logTag, "onFinishInput()")
     }
 
     override fun onDestroy() {
@@ -309,18 +266,15 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         // have to make Back key work as is at very first, or some back operations will be blocked
         if (keyCode == KeyEvent.KEYCODE_BACK) {
             Log.d(logTag, "Back key pressed")
-            this@GuilelessBopomofoService.requestHideSelf(0)
+            requestHideSelf(0)
             return super.onKeyDown(keyCode, event)
         }
 
         assureViewBindingInitialized()
 
         // handles physical functional keys
-        val handler = physicalKeyDispatcher[keyCode]
-        if (handler != null) {
-            if (handler.onKeyDown(this, keyCode, event)) {
-                return true // Event was handled by our specific class
-            }
+        if (physicalKeyDispatcher[keyCode]?.onKeyDown(this, keyCode, event) == true) {
+            return true
         }
 
         // handles printing (character) keys
@@ -357,22 +311,15 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         assureViewBindingInitialized()
 
         // handles physical functional keys
-        val handler = physicalKeyDispatcher[keyCode]
-        if (handler != null) {
-            if (handler.onKeyUp(this, keyCode, event)) {
-                return true // Event was handled by our specific class
-            }
+        if (physicalKeyDispatcher[keyCode]?.onKeyUp(this, keyCode, event) == true) {
+            return true
         }
 
         if (event?.isPrintingKey == true) {
             // Detect if a candidate had been chosen by user
             viewBinding.keyboardPanel.let {
                 if (it.currentLayout == Layout.CANDIDATES) {
-                    if (ChewingUtil.candidateWindowClosed()) {
-                        it.candidateKeySelected(event)
-                    } else {
-                        it.renderCandidatesLayout()
-                    }
+                    it.candidateKeySelected()
                 }
             }
             return true
@@ -392,24 +339,11 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         assureViewBindingInitialized()
 
         // handles physical functional keys
-        val handler = physicalKeyDispatcher[keyCode]
-        if (handler != null) {
-            if (handler.onKeyLongPress(this, keyCode, event)) {
-                return true // Event was handled by our specific class
-            }
+        if (physicalKeyDispatcher[keyCode]?.onKeyLongPress(this, keyCode, event) == true) {
+            return true
         }
 
         return super.onKeyLongPress(keyCode, event)
-    }
-
-    override fun onWindowHidden() {
-        super.onWindowHidden()
-        Log.d(logTag, "onWindowHidden()")
-    }
-
-    override fun onWindowShown() {
-        super.onWindowShown()
-        Log.d(logTag, "onWindowShown()")
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
@@ -422,6 +356,50 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         Log.d(logTag, "onFinishInputView()")
     }
 
+    private fun initializeChewing() {
+        val dataPath = applicationInfo.dataDir
+        ChewingUtil.setupChewingData(this, dataPath)
+        ChewingBridge.chewing.connect(dataPath)
+        Log.d(logTag, "Chewing context ptr: ${ChewingBridge.chewing.context}")
+
+        if (sharedPreferences.getBoolean(USER_ENABLE_SPACE_AS_SELECTION, true)) {
+            ChewingBridge.chewing.setSpaceAsSelection(1)
+        }
+
+        if (sharedPreferences.getBoolean(USER_PHRASE_CHOICE_REARWARD, false)) {
+            ChewingBridge.chewing.setPhraseChoiceRearward(1)
+        }
+
+        // set conversion engine (traditional, fuzzy or default (chewing))
+        applyConversionEngine()
+
+        ChewingBridge.chewing.setChiEngMode(ChiEngMode.CHINESE.mode)
+        ChewingBridge.chewing.setCandPerPage(CANDIDATES_PER_PAGE)
+        ChewingBridge.chewing.configSetInt("chewing.sort_candidates_by_frequency", 1)
+
+        applySelectionKeys(
+            sharedPreferences.getString(USER_CANDIDATE_SELECTION_KEYS_OPTION, SelectionKeys.NUMBER_ROW.set)
+        )
+    }
+
+    /**
+     * Leaves the IME running without libchewing behind it: there is nothing to type with,
+     * but the keyboard still draws itself and the user is told why.
+     */
+    private fun reportChewingInitFailure(logMessage: String, exception: Throwable) {
+        ChewingBridge.chewing.context = 0
+        Log.e(logTag, logMessage, exception)
+        Toast.makeText(
+            applicationContext, getString(R.string.libchewing_init_fail, exception.message), Toast.LENGTH_LONG
+        ).show()
+    }
+
+    private fun applySelectionKeys(selectionKeysOption: String?) {
+        selectionKeysOption?.let {
+            ChewingBridge.chewing.setSelKey(SelectionKeys.valueOf(it).keys, CANDIDATES_PER_PAGE)
+        }
+    }
+
     private fun applyConversionEngine() {
         val key = if (physicalKeyboardPresented)
             USER_CONVERSION_ENGINE_WHEN_USING_PHYSICAL_KEYBOARD
@@ -431,27 +409,6 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             key, ConversionEngines.CHEWING_CONVERSION_ENGINE.mode
         )
         ChewingBridge.chewing.configSetInt("chewing.conversion_engine", mode)
-    }
-
-    private fun initializePhysicalKeyDispatcher() {
-        physicalKeyDispatcher = mapOf(
-            KeyEvent.KEYCODE_DPAD_DOWN to Down(),
-            KeyEvent.KEYCODE_DPAD_UP to Up(),
-            KeyEvent.KEYCODE_DPAD_LEFT to Left(),
-            KeyEvent.KEYCODE_DPAD_RIGHT to Right(),
-            KeyEvent.KEYCODE_ALT_LEFT to LeftAlt(),
-            KeyEvent.KEYCODE_SHIFT_RIGHT to RightShift(),
-            KeyEvent.KEYCODE_ENTER to Enter(),
-            KeyEvent.KEYCODE_SPACE to Space(),
-            KeyEvent.KEYCODE_ESCAPE to Escape(),
-            KeyEvent.KEYCODE_DEL to Del(),
-            KeyEvent.KEYCODE_CAPS_LOCK to CapsLock(),
-            KeyEvent.KEYCODE_MOVE_END to End(),
-            KeyEvent.KEYCODE_MOVE_HOME to Home(),
-            KeyEvent.KEYCODE_VOLUME_UP to VolumeUp(),
-            KeyEvent.KEYCODE_VOLUME_DOWN to VolumeDown(),
-            // Add more mappings here for each physical key you want to handle separately
-        )
     }
 
     // handles both physical and virtual printing key-down events, routes to chewing.handleDefault()
@@ -536,9 +493,13 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     private fun releaseShiftKeyIfNeeded() {
         if (shiftKeyIsActive && !shiftKeyIsLocked) {
             Log.d(logTag, "Release Shift key")
-            viewBinding.keyboardPanel.releaseShiftKey()
-            currentInputConnection?.sendKeyEvent(KeyEvent(ACTION_UP, KEYCODE_SHIFT_LEFT))
+            releaseShiftKey()
         }
+    }
+
+    private fun releaseShiftKey() {
+        viewBinding.keyboardPanel.releaseShiftKey()
+        currentInputConnection?.sendKeyEvent(KeyEvent(ACTION_UP, KEYCODE_SHIFT_LEFT))
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
@@ -577,13 +538,8 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onRequestHideIme(event: Events.RequestHideIme) {
-        viewBinding.keyboardPanel.apply {
-            if (this.currentLayout in listOf(
-                    Layout.MAIN, Layout.COMPACT, Layout.QWERTY
-                )
-            ) {
-                this@GuilelessBopomofoService.requestHideSelf(0)
-            }
+        if (viewBinding.keyboardPanel.currentLayout in DISMISSIBLE_LAYOUTS) {
+            requestHideSelf(0)
         }
     }
 
@@ -591,14 +547,11 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     fun onExitKeyboardSubLayouts(event: Events.ExitKeyboardSubLayouts) {
         Log.d(logTag, event::class.simpleName ?: "Event")
         viewBinding.keyboardPanel.apply {
-            if (this.currentLayout in listOf(
-                    Layout.SYMBOLS, Layout.CANDIDATES
-                )
-            ) {
+            if (currentLayout in SUB_LAYOUTS) {
                 ChewingBridge.chewing.candClose()
                 // reset last cursor position
-                this.lastChewingCursor = 0
-                this.switchToLayout(Layout.MAIN)
+                lastChewingCursor = 0
+                switchToLayout(Layout.MAIN)
             }
         }
     }
@@ -655,23 +608,21 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     fun onToggleKeyboardMainLayoutMode(event: Events.ToggleKeyboardMainLayoutMode) {
         Log.d(logTag, event::class.simpleName ?: "Event")
         // Always reset Shift state when switching main layouts.
-        viewBinding.keyboardPanel.releaseShiftKey()
-        currentInputConnection?.sendKeyEvent(KeyEvent(ACTION_UP, KEYCODE_SHIFT_LEFT))
+        releaseShiftKey()
         viewBinding.keyboardPanel.toggleMainLayoutMode()
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onToggleFullOrHalfWidthMode(event: Events.ToggleFullOrHalfWidthMode) {
-        var shapeMode: String = ""
-        when (ChewingBridge.chewing.getShapeMode()) {
+        val shapeMode: String = when (ChewingBridge.chewing.getShapeMode()) {
             ShapeMode.HALF.mode -> {
                 ChewingBridge.chewing.setShapeMode(ShapeMode.FULL.mode)
-                shapeMode = getString(R.string.full_width_mode)
+                getString(R.string.full_width_mode)
             }
 
-            ShapeMode.FULL.mode -> {
+            else -> {
                 ChewingBridge.chewing.setShapeMode(ShapeMode.HALF.mode)
-                shapeMode = getString(R.string.half_width_mode)
+                getString(R.string.half_width_mode)
             }
         }
 
@@ -709,24 +660,18 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     fun onDirectionKeyDown(event: Events.DirectionKeyDown) {
         if (ChewingBridge.chewing.bufferLen() > 0) {
             viewBinding.textViewPreEditBuffer.cursorMovedBy(PreEditBufferTextView.CursorMovedFrom.PHYSICAL_KEYBOARD)
-        } else {
-            if (ChewingUtil.candidateWindowClosed()) {
-                when (event.direction) {
-                    DirectionKey.LEFT -> {
-                        sendDownUpKeyEvents(KEYCODE_DPAD_LEFT)
-                    }
-
-                    DirectionKey.RIGHT -> {
-                        sendDownUpKeyEvents(KEYCODE_DPAD_RIGHT)
-                    }
-                }
+        } else if (ChewingUtil.candidateWindowClosed()) {
+            // Nothing of ours to move through, so let the text field move its own cursor.
+            when (event.direction) {
+                DirectionKey.LEFT -> sendDownUpKeyEvents(KEYCODE_DPAD_LEFT)
+                DirectionKey.RIGHT -> sendDownUpKeyEvents(KEYCODE_DPAD_RIGHT)
             }
         }
 
         // toggle to next page of candidates
         viewBinding.keyboardPanel.apply {
-            if (this.currentLayout == Layout.CANDIDATES && ChewingUtil.candidateWindowOpened()) {
-                this.renderCandidatesLayout()
+            if (currentLayout == Layout.CANDIDATES && ChewingUtil.candidateWindowOpened()) {
+                renderCandidatesLayout()
             }
         }
     }
@@ -756,7 +701,7 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
 
     private fun assureViewBindingInitialized() {
         Log.d(logTag, "assureViewBindingInitialized()")
-        if (!this@GuilelessBopomofoService::viewBinding.isInitialized) {
+        if (!::viewBinding.isInitialized) {
             Log.d(logTag, "initialize viewBinding")
             setInputView(onCreateInputView())
         }
@@ -774,7 +719,7 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             USER_ENABLE_IME_SWITCH,
             USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH,
                 -> {
-                if (this@GuilelessBopomofoService::viewBinding.isInitialized) {
+                if (::viewBinding.isInitialized) {
                     // The layouts are built from these, so they have to be inflated again.
                     viewBinding.keyboardPanel.invalidateRenderedLayout()
                     viewBinding.keyboardPanel.switchToLayout(Layout.MAIN)
@@ -792,11 +737,9 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             }
 
             USER_HAPTIC_FEEDBACK_STRENGTH -> {
-                sharedPreferences?.apply {
-                    userHapticFeedbackStrength = this.getInt(
-                        key, defaultHapticFeedbackStrength
-                    )
-                }
+                userHapticFeedbackStrength =
+                    sharedPreferences?.getInt(key, defaultHapticFeedbackStrength)
+                        ?: defaultHapticFeedbackStrength
             }
 
             // No-op: handled elsewhere (onEvaluateFullscreenMode, Vibratable)
@@ -806,13 +749,7 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
                 -> {}
 
             USER_CANDIDATE_SELECTION_KEYS_OPTION -> {
-                sharedPreferences?.getString(
-                    key, SelectionKeys.NUMBER_ROW.set
-                )?.let {
-                    ChewingBridge.chewing.setSelKey(
-                        SelectionKeys.valueOf(it).keys, CANDIDATES_PER_PAGE
-                    )
-                }
+                applySelectionKeys(sharedPreferences?.getString(key, SelectionKeys.NUMBER_ROW.set))
             }
 
             USER_CONVERSION_ENGINE,

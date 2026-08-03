@@ -20,20 +20,15 @@ package org.ghostsinthelab.apps.guilelessbopomofo
 
 import android.content.res.Configuration
 import android.os.Bundle
-import android.util.Log
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import org.ghostsinthelab.apps.guilelessbopomofo.databinding.ActivityEngineeringModeBinding
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.EdgeToEdge
-import java.io.File
 
 class EngineeringModeActivity : AppCompatActivity(), EdgeToEdge {
-    private val logTag = "EngineeringModeActivity"
-
     // ViewBinding
     private lateinit var viewBinding: ActivityEngineeringModeBinding
-
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,7 +37,9 @@ class EngineeringModeActivity : AppCompatActivity(), EdgeToEdge {
         viewBinding = ActivityEngineeringModeBinding.inflate(this.layoutInflater)
 
         // Chewing data files status
-        val chewingDataFilesStatusText: String = if (checkChewingDateFiles()) {
+        val chewingDataFilesStatusText: String = if (
+            ChewingUtil.chewingDataFilesInstalled(applicationInfo.dataDir)
+        ) {
             getString(R.string.chewing_data_files_status_ok)
         } else {
             getString(R.string.chewing_data_files_status_error)
@@ -66,36 +63,17 @@ class EngineeringModeActivity : AppCompatActivity(), EdgeToEdge {
         }
         viewBinding.hardwareKeyboardHiddenStatus.text = hardwareKeyboardHiddenStatusText
 
-        viewBinding.let {
-            val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-
-            it.editTextTestTextInput.setOnLongClickListener {
+        // Long pressing either test field is a shortcut to the IME picker, so that one can
+        // switch keyboards without leaving this screen.
+        val inputMethodManager = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+        listOf(viewBinding.editTextTestTextInput, viewBinding.editTextTestNumberInput).forEach {
+            it.setOnLongClickListener {
                 inputMethodManager.showInputMethodPicker()
-                return@setOnLongClickListener true
-            }
-
-            it.editTextTestNumberInput.setOnLongClickListener {
-                inputMethodManager.showInputMethodPicker()
-                return@setOnLongClickListener true
+                true
             }
         }
 
         setContentView(viewBinding.root)
         applyInsetsAsPadding(viewBinding.root)
-    }
-
-    private fun checkChewingDateFiles(): Boolean {
-        val dataPath = applicationInfo.dataDir
-        val chewingDataDir = File(dataPath)
-        val chewingDataFiles = ChewingUtil.listOfDataFiles()
-
-        for (file in chewingDataFiles) {
-            val destinationFile = File(String.format("%s/%s", chewingDataDir.absolutePath, file))
-            Log.d(logTag, "Destination file: $destinationFile")
-            if (!destinationFile.exists()) {
-                return false
-            }
-        }
-        return true
     }
 }

@@ -31,12 +31,9 @@ class CapsLock : PhysicalKeyHandler {
     }
 
     override fun onKeyUp(context: Context, keyCode: Int, event: KeyEvent?): Boolean {
-        event?.apply {
-            if (this.isCapsLockOn) {
-                Toast.makeText(context, R.string.capsLockIsOn, Toast.LENGTH_SHORT).show()
-            } else {
-                Toast.makeText(context, R.string.capsLockIsOff, Toast.LENGTH_SHORT).show()
-            }
+        event?.let {
+            val message = if (it.isCapsLockOn) R.string.capsLockIsOn else R.string.capsLockIsOff
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
         }
         return true
     }

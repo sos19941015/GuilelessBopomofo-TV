@@ -736,6 +736,10 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         super.onConfigurationChanged(newConfig)
         assureViewBindingInitialized()
 
+        // A new orientation or screen size picks its layout resources afresh, so never let
+        // the panel hand back what it inflated for the previous configuration.
+        viewBinding.keyboardPanel.invalidateRenderedLayout()
+
         if (isInputViewShown) {
             Log.d(logTag, "onConfigurationChanged(): refresh the input view.")
             // toggle main layout automatically between physical keyboard being connected and disconnected
@@ -771,6 +775,8 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH,
                 -> {
                 if (this@GuilelessBopomofoService::viewBinding.isInitialized) {
+                    // The layouts are built from these, so they have to be inflated again.
+                    viewBinding.keyboardPanel.invalidateRenderedLayout()
                     viewBinding.keyboardPanel.switchToLayout(Layout.MAIN)
                 }
             }

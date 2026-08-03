@@ -60,6 +60,14 @@ class KeyboardPanel(
 
     private var compactLayoutBinding: CompactLayoutBinding? = null
 
+    // Which keyboard is on screen at this very moment, so that asking again for the one
+    // already shown costs nothing. onStartInputView() fires on every hop between text
+    // fields, and tearing the keyboard down only to inflate the same thing again is what
+    // makes it visibly reload while filling in, say, the six boxes of a one time password.
+    private enum class RenderedLayout { BOPOMOFO, ALPHANUMERICAL, COMPACT }
+
+    private var renderedLayout: RenderedLayout? = null
+
     // candidatesRecyclerView
     private val candidatesLayoutBinding: CandidatesLayoutBinding by lazy {
         CandidatesLayoutBinding.inflate(LayoutInflater.from(context))
@@ -88,6 +96,14 @@ class KeyboardPanel(
                 switchToAlphanumericalLayout()
             }
         }
+    }
+
+    /**
+     * Throw away what is on screen, so that the next switch inflates it afresh. Call this
+     * whenever something the layouts are built from, a preference say, has changed.
+     */
+    fun invalidateRenderedLayout() {
+        renderedLayout = null
     }
 
     fun switchToLayout(layout: Layout) {
@@ -137,9 +153,14 @@ class KeyboardPanel(
             ChewingBridge.chewing.setKBType(newPhysicalKeyboardType)
         }
 
-        this.removeAllViews()
-        val binding = CompactLayoutBinding.inflate(LayoutInflater.from(context))
-        compactLayoutBinding = binding
+        // Keep the one already on screen, its mode indicators are refreshed below anyway.
+        val binding = compactLayoutBinding.takeIf { renderedLayout == RenderedLayout.COMPACT }
+            ?: CompactLayoutBinding.inflate(LayoutInflater.from(context)).also {
+                compactLayoutBinding = it
+                this.removeAllViews()
+                this.addView(it.root)
+                renderedLayout = RenderedLayout.COMPACT
+            }
 
         if (ChewingBridge.chewing.getChiEngMode() == ChiEngMode.CHINESE.mode) {
             binding.textViewCurrentModeValue.text = resources.getString(R.string.mode_bopomofo)
@@ -156,8 +177,6 @@ class KeyboardPanel(
                 binding.textViewCurrentWidthModeValue.text = resources.getString(R.string.full_width_mode)
             }
         }
-
-        this.addView(binding.root)
     }
 
     private fun switchToBopomofoLayout() {
@@ -170,17 +189,23 @@ class KeyboardPanel(
         }
 
         currentLayout = Layout.MAIN
-        this.removeAllViews()
 
         // 不同注音排列螢幕鍵盤的抽換 support different on-screen Bopomofo keyboard layouts
         val userSoftKeyboardLayoutPreference = sharedPreferences.getString(
             USER_SOFT_KEYBOARD_LAYOUT, BopomofoSoftKeyboards.KB_DEFAULT.layout
         )
 
+        // Chewing keeps its own notion of the layout, and the compact one sets it from a
+        // different preference, so say it again even when nothing is inflated below.
         userSoftKeyboardLayoutPreference?.let {
             val newSoftKeyboardType = ChewingBridge.chewing.convKBStr2Num(it)
             ChewingBridge.chewing.setKBType(newSoftKeyboardType)
         }
+
+        if (renderedLayout == RenderedLayout.BOPOMOFO) return
+
+        this.removeAllViews()
+        renderedLayout = RenderedLayout.BOPOMOFO
 
         val inflater = LayoutInflater.from(context)
         when (userSoftKeyboardLayoutPreference) {
@@ -223,7 +248,11 @@ class KeyboardPanel(
         }
 
         currentLayout = Layout.QWERTY
+
+        if (renderedLayout == RenderedLayout.ALPHANUMERICAL) return
+
         this.removeAllViews()
+        renderedLayout = RenderedLayout.ALPHANUMERICAL
         this.addView(KeyboardQwertyLayoutBinding.inflate(LayoutInflater.from(context)).root)
     }
 
@@ -295,6 +324,8 @@ class KeyboardPanel(
         currentLayout = Layout.CANDIDATES
 
         this.removeAllViews()
+        // The keyboard is gone from the screen now, whatever it was.
+        renderedLayout = null
         this.addView(candidatesLayoutBinding.root)
 
         if (physicalKeyboardPresented) {

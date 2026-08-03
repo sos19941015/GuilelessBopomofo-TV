@@ -22,6 +22,7 @@ import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
 import org.ghostsinthelab.apps.guilelessbopomofo.ChewingUtil
+import org.ghostsinthelab.apps.guilelessbopomofo.enums.EnterKeyIntent
 
 class Enter : PhysicalKeyHandler {
     override fun onKeyDown(
@@ -30,9 +31,7 @@ class Enter : PhysicalKeyHandler {
         event: KeyEvent?,
     ): Boolean {
         Log.d("Enter", "onKeyDown()")
-        // [Shift] + [Enter] is how one asks a physical keyboard for a line break without
-        // submitting the text field.
-        ChewingUtil.handleEnterAction(forcePlainEnterKey = event?.isShiftPressed == true)
+        ChewingUtil.handleEnterAction(EnterKeyIntent.forMetaState(event?.metaState ?: 0))
         return true
     }
 

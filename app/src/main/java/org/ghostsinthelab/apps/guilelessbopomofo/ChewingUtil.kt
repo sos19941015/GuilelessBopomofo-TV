@@ -21,6 +21,7 @@ package org.ghostsinthelab.apps.guilelessbopomofo
 import android.content.Context
 import android.util.Log
 import android.view.KeyEvent
+import org.ghostsinthelab.apps.guilelessbopomofo.enums.EnterKeyIntent
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.Layout
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
 import org.greenrobot.eventbus.EventBus
@@ -192,23 +193,23 @@ object ChewingUtil {
     }
 
     /**
-     * @param forcePlainEnterKey Ask for a line break even when the text field declares an
-     * editor action, as [Shift] + [Enter] does on a physical keyboard. Committing what is
-     * still in the buffer always comes first.
+     * @param intent What the user meant by the key press. Committing what is still in the
+     * buffer always comes first, whichever intent is given.
      */
-    fun handleEnterAction(forcePlainEnterKey: Boolean = false) {
+    fun handleEnterAction(intent: EnterKeyIntent = EnterKeyIntent.EDITOR_ACTION) {
         if (anyBufferIsNotEmpty()) {
             ChewingBridge.chewing.commitPreeditBuf(ChewingBridge.chewing.context)
             EventBus.getDefault().post(Events.UpdateBufferViews())
             return
         }
 
-        if (forcePlainEnterKey) {
-            EventBus.getDefault().post(Events.SendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER))
-            return
-        }
+        when (intent) {
+            EnterKeyIntent.LINE_BREAK ->
+                EventBus.getDefault().post(Events.SendDownUpKeyEvents(KeyEvent.KEYCODE_ENTER))
 
-        EventBus.getDefault().post(Events.EnterKeyDownWhenBufferIsEmpty())
+            EnterKeyIntent.EDITOR_ACTION ->
+                EventBus.getDefault().post(Events.EnterKeyDownWhenBufferIsEmpty())
+        }
     }
 
     fun handleSpaceAction() {

@@ -126,3 +126,58 @@ class EnterKeyBehaviorResolverTest {
         )
     }
 }
+
+/**
+ * The [EditorInfo] overload only reads the three fields apart, but it is the one the service
+ * actually calls, so pin down that it reads the right ones.
+ */
+class EnterKeyBehaviorResolverEditorInfoTest {
+
+    private fun editorInfo(
+        imeOptions: Int,
+        actionId: Int = EditorInfo.IME_ACTION_UNSPECIFIED,
+        actionLabel: CharSequence? = null,
+    ): EditorInfo = EditorInfo().also {
+        it.imeOptions = imeOptions
+        it.actionId = actionId
+        it.actionLabel = actionLabel
+    }
+
+    @Test
+    fun aSearchField_performsTheSearch() {
+        assertEquals(
+            EnterKeyBehavior.EditorAction(EditorInfo.IME_ACTION_SEARCH),
+            EnterKeyBehaviorResolver.resolve(editorInfo(EditorInfo.IME_ACTION_SEARCH))
+        )
+    }
+
+    @Test
+    fun aMultipleLineField_insertsALineBreak() {
+        // What TextView hands us for android:inputType="textMultiLine".
+        assertEquals(
+            EnterKeyBehavior.NewLine,
+            EnterKeyBehaviorResolver.resolve(
+                editorInfo(EditorInfo.IME_ACTION_DONE or EditorInfo.IME_FLAG_NO_ENTER_ACTION)
+            )
+        )
+    }
+
+    @Test
+    fun aCustomActionLabel_performsItsOwnActionId() {
+        assertEquals(
+            EnterKeyBehavior.EditorAction(7),
+            EnterKeyBehaviorResolver.resolve(
+                editorInfo(
+                    imeOptions = EditorInfo.IME_ACTION_UNSPECIFIED,
+                    actionId = 7,
+                    actionLabel = "Send",
+                )
+            )
+        )
+    }
+
+    @Test
+    fun anUntouchedEditorInfo_insertsALineBreak() {
+        assertEquals(EnterKeyBehavior.NewLine, EnterKeyBehaviorResolver.resolve(EditorInfo()))
+    }
+}

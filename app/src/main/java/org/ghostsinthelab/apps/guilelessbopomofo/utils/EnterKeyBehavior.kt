@@ -21,7 +21,7 @@ package org.ghostsinthelab.apps.guilelessbopomofo.utils
 import android.view.inputmethod.EditorInfo
 
 /**
- * What the [Enter] key should do for the text field currently being edited.
+ * What the `Enter` key should do for the text field currently being edited.
  */
 sealed interface EnterKeyBehavior {
     /** Behave as a plain Enter key: insert a line break, or let the target app deal with it. */

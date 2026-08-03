@@ -693,7 +693,9 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
 
         when (behavior) {
             is EnterKeyBehavior.EditorAction -> {
-                // Fall back to a plain Enter when the target app declines the action.
+                // A false return means the input connection died under us, never that the
+                // text field turned the action down. The plain Enter is a last resort that
+                // will quietly do nothing in that case.
                 if (currentInputConnection?.performEditorAction(behavior.actionId) != true) {
                     sendDownUpKeyEvents(KEYCODE_ENTER)
                 }

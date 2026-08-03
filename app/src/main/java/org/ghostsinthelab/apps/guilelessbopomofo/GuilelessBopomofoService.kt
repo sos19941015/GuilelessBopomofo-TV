@@ -90,6 +90,8 @@ import org.ghostsinthelab.apps.guilelessbopomofo.keys.physical.Up
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.physical.VolumeDown
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.physical.VolumeUp
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.EdgeToEdge
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.EnterKeyBehavior
+import org.ghostsinthelab.apps.guilelessbopomofo.utils.EnterKeyBehaviorResolver
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.KeyEventExtension
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.Vibratable
 import org.greenrobot.eventbus.EventBus
@@ -686,35 +688,18 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
     fun onEnterKeyDownWhenBufferIsEmpty(event: Events.EnterKeyDownWhenBufferIsEmpty) {
         Log.d(logTag, event::class.simpleName ?: "Event")
 
-        var multiLineEditText = false
+        val behavior = currentInputEditorInfo?.let(EnterKeyBehaviorResolver::resolve)
+            ?: EnterKeyBehavior.NewLine
 
-        currentInputEditorInfo?.apply {
-            // Is it a multiple line text field?
-            if ((this.inputType and InputType.TYPE_MASK_CLASS and InputType.TYPE_CLASS_TEXT) == InputType.TYPE_CLASS_TEXT) {
-                if ((this.inputType and InputType.TYPE_MASK_FLAGS and InputType.TYPE_TEXT_FLAG_MULTI_LINE) == InputType.TYPE_TEXT_FLAG_MULTI_LINE) {
-                    multiLineEditText = true
+        when (behavior) {
+            is EnterKeyBehavior.EditorAction -> {
+                // Fall back to a plain Enter when the target app declines the action.
+                if (currentInputConnection?.performEditorAction(behavior.actionId) != true) {
+                    sendDownUpKeyEvents(KEYCODE_ENTER)
                 }
             }
 
-            // Just do as press Enter, never care about the defined action if we are now in a multiple line text field
-            if (multiLineEditText) {
-                this@GuilelessBopomofoService.sendDownUpKeyEvents(KEYCODE_ENTER)
-                return
-            }
-
-            when (val imeAction = (this.imeOptions and EditorInfo.IME_MASK_ACTION)) {
-                EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_NEXT, EditorInfo.IME_ACTION_SEARCH, EditorInfo.IME_ACTION_SEND -> {
-                    // The current EditText has a specified android:imeOptions attribute.
-                    this@GuilelessBopomofoService.currentInputConnection?.performEditorAction(
-                        imeAction
-                    )
-                }
-
-                else -> {
-                    // The current EditText has no android:imeOptions attribute, or I don't want to make it act as is.
-                    this@GuilelessBopomofoService.sendDownUpKeyEvents(KEYCODE_ENTER)
-                }
-            }
+            EnterKeyBehavior.NewLine -> sendDownUpKeyEvents(KEYCODE_ENTER)
         }
     }
 

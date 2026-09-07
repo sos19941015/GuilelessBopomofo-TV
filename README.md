@@ -14,6 +14,16 @@ This is a community Android TV derivative of [Guileless Bopomofo](https://github
 - 提供 Android TV Launcher 入口及 16:9 TV banner。
 - Debug 建置不包含 LeakCanary 的額外 Leaks 圖示。
 
+## Android TV 實機畫面
+
+### TV 首頁與應用程式 banner
+
+![Guileless Bopomofo TV launcher banner displayed on an Android TV](./media/android-tv-launcher.jpg)
+
+### 遙控器 DPAD 鍵盤實際使用畫面
+
+![Guileless Bopomofo keyboard being used in Spotify on an Android TV](./media/android-tv-keyboard-in-use.jpg)
+
 ## 下載與安裝
 
 您可以從 [GitHub Releases](https://github.com/sos19941015/GuilelessBopomofo-TV/releases) 下載 APK，或在 Android TV 上使用 [Downloader app](https://www.aftvnews.com/downloader)：

@@ -23,6 +23,7 @@
     android:layout_height="wrap_content"
     android:layout_alignParentBottom="true"
     android:layout_gravity="bottom"
+    android:background="@android:color/transparent"
     android:orientation="vertical"
     android:theme="@style/KeyboardTheme"
     android:visibility="visible">
@@ -55,7 +56,7 @@
     <org.ghostsinthelab.apps.guilelessbopomofo.KeyboardPanel
         android:id="@+id/keyboardPanel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:animateLayoutChanges="true"
         android:paddingTop="4dp"
         android:paddingBottom="4dp"

@@ -3,6 +3,12 @@ plugins {
     id("kotlin-parcelize")
 }
 
+val hostMakeCommand = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    "nmake"
+} else {
+    "make"
+}
+
 android {
     compileSdk = 37
     buildToolsVersion = "37.0.0"
@@ -102,7 +108,7 @@ tasks.register<Exec>("prepareChewing") {
 tasks.register<Exec>("buildChewingData") {
     dependsOn("prepareChewing")
     workingDir("$chewingLibraryPath/build")
-    commandLine("make", "dict_chewing", "misc")
+    commandLine(hostMakeCommand, "dict_chewing", "misc")
 }
 
 tasks.register<Copy>("copyChewingDataFiles") {
@@ -217,7 +223,6 @@ dependencies {
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.mockito.android)
     androidTestImplementation(libs.mockito.core)
-    debugImplementation(libs.leakcanary.android)
     implementation(libs.appcompat)
     implementation(libs.appcompat.resources)
     implementation(libs.constraintlayout)

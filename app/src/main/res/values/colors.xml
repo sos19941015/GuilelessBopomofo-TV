@@ -45,6 +45,10 @@
     <color name="colorBopomofoBufferTextView">#333333</color>
     <color name="colorBopomofoBufferTextViewBackground">#00BCD4</color>
 
+    <!-- High-contrast remote focus treatment; readable on both light and dark key themes. -->
+    <color name="android_tv_focus_fill">#FFFF00</color>
+    <color name="android_tv_focus_ring">#FFFFFF</color>
+
     <!-- Bottom navigation selected icon tint. Day value matches the default
          colorOnSecondaryContainer behavior; values-night overrides it to a
          light tone so the icon reads on the wine-red indicator pill. -->

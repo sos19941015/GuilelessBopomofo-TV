@@ -87,7 +87,7 @@ class UserInterfaceSettingsFragment : ViewBindingFragment<FragmentUserInterfaceS
                 sharedPreferences, USER_FULLSCREEN_WHEN_IN_PORTRAIT, false
             )
             switchSettingEnableImeSwitch.bindToPreference(
-                sharedPreferences, USER_ENABLE_IME_SWITCH, false
+                sharedPreferences, USER_ENABLE_IME_SWITCH, true
             )
             switchSettingImeSwitch.bindToPreference(
                 sharedPreferences, USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH, false

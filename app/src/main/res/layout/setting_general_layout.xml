@@ -172,6 +172,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/textViewSettingDescriptionSpaceAsSelection" />
 
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switchSettingAndroidTvMode"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:text="@string/android_tv_mode"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/switchSettingSpaceAsSelection" />
+
     <TextView
         android:id="@+id/textViewRearwardPhraseChoice"
         style="@style/Settings.Label"
@@ -181,7 +191,7 @@
         android:text="@string/rearward_phrase_choice"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/switchSettingSpaceAsSelection" />
+        app:layout_constraintTop_toBottomOf="@id/switchSettingAndroidTvMode" />
 
     <TextView
         android:id="@+id/textViewRearwardPhraseChoiceDescription"

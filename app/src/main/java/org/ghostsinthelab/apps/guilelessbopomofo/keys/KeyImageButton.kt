@@ -23,6 +23,7 @@ import android.content.SharedPreferences
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.os.SystemClock
 import com.google.android.material.button.MaterialButton
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_KEY_BUTTON_HEIGHT
 import org.ghostsinthelab.apps.guilelessbopomofo.R
@@ -63,6 +64,20 @@ abstract class KeyImageButton(context: Context, attrs: AttributeSet) :
             gestureDetector.onTouchEvent(event)
         }
         return super.onTouchEvent(event)
+    }
+
+    /** Invokes the same gesture path as a tap without sending a real touch event to the view. */
+    fun activateForTv(): Boolean {
+        val time = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, width / 2f, height / 2f, 0)
+        val up = MotionEvent.obtain(time, time, MotionEvent.ACTION_UP, width / 2f, height / 2f, 0)
+        return try {
+            gestureDetector.onTouchEvent(down)
+            gestureDetector.onTouchEvent(up)
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
     }
 
     init {

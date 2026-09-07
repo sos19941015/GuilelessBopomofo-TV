@@ -41,20 +41,27 @@ import android.view.KeyEvent.KEYCODE_V
 import android.view.KeyEvent.KEYCODE_X
 import android.view.KeyEvent.KEYCODE_Z
 import android.view.KeyEvent.META_SHIFT_ON
+import android.view.Gravity
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.LinearLayout
 import android.widget.Toast
+import androidx.core.content.edit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.SAME_HAPTIC_FEEDBACK_TO_FUNCTION_BUTTONS
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.ANDROID_TV_DEFAULT_ENABLED_V2
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.ANDROID_TV_IME_WIDTH_RATIO
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.IME_SWITCH_DEFAULT_ENABLED_V2
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CANDIDATE_SELECTION_KEYS_OPTION
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CONVERSION_ENGINE
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_CONVERSION_ENGINE_WHEN_USING_PHYSICAL_KEYBOARD
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_ETEN26_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_HSU_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_ANDROID_TV_MODE
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_IME_SWITCH
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_SPACE_AS_SELECTION
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_FULLSCREEN_WHEN_IN_LANDSCAPE
@@ -165,6 +172,23 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         }
 
         sharedPreferences = appSharedPreferences
+
+        // This Android TV build starts in remote-navigation mode. The migration flag also
+        // enables it once for users installing over an earlier test APK whose stored value
+        // was false; after that, an explicit user change is respected.
+        if (!sharedPreferences.getBoolean(ANDROID_TV_DEFAULT_ENABLED_V2, false)) {
+            sharedPreferences.edit {
+                putBoolean(USER_ENABLE_ANDROID_TV_MODE, true)
+                putBoolean(ANDROID_TV_DEFAULT_ENABLED_V2, true)
+            }
+        }
+        // Enable the IME switch key once for new installs and upgrades from earlier TV builds.
+        if (!sharedPreferences.getBoolean(IME_SWITCH_DEFAULT_ENABLED_V2, false)) {
+            sharedPreferences.edit {
+                putBoolean(USER_ENABLE_IME_SWITCH, true)
+                putBoolean(IME_SWITCH_DEFAULT_ENABLED_V2, true)
+            }
+        }
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
 
         try {
@@ -210,6 +234,17 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         Log.d(logTag, "onCreateInputView()")
         viewBinding = ImeLayoutBinding.inflate(this.layoutInflater)
 
+        if (sharedPreferences.getBoolean(USER_ENABLE_ANDROID_TV_MODE, true)) {
+            val tvContentWidth =
+                (resources.displayMetrics.widthPixels * ANDROID_TV_IME_WIDTH_RATIO).toInt()
+            viewBinding.flexBoxLayoutBufferTextViews.layoutParams =
+                (viewBinding.flexBoxLayoutBufferTextViews.layoutParams as LinearLayout.LayoutParams).apply {
+                    width = tvContentWidth
+                    gravity = Gravity.CENTER_HORIZONTAL
+                }
+            viewBinding.flexBoxLayoutBufferTextViews.background = null
+        }
+
         applyInputViewBottomEdgeWithGradient(viewBinding.root, viewBinding.imeBottomGradientSpacer)
 
         return viewBinding.root
@@ -241,6 +276,7 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         }
 
         viewBinding.keyboardPanel.switchToLayout(Layout.MAIN)
+        viewBinding.keyboardPanel.focusFirstKeyForAndroidTv()
         EventBus.getDefault().post(Events.UpdateBufferViews())
     }
 
@@ -271,6 +307,10 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         }
 
         assureViewBindingInitialized()
+
+        if (viewBinding.keyboardPanel.handleAndroidTvKey(keyCode)) {
+            return true
+        }
 
         // handles physical functional keys
         if (physicalKeyDispatcher[keyCode]?.onKeyDown(this, keyCode, event) == true) {
@@ -309,6 +349,10 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
         }
 
         assureViewBindingInitialized()
+
+        if (viewBinding.keyboardPanel.isAndroidTvNavigationKey(keyCode)) {
+            return true
+        }
 
         // handles physical functional keys
         if (physicalKeyDispatcher[keyCode]?.onKeyUp(this, keyCode, event) == true) {
@@ -689,6 +733,7 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             Log.d(logTag, "onConfigurationChanged(): refresh the input view.")
             // toggle main layout automatically between physical keyboard being connected and disconnected
             viewBinding.keyboardPanel.switchToLayout(Layout.MAIN)
+            viewBinding.keyboardPanel.focusFirstKeyForAndroidTv()
             // there will be a short (time) window that InputMethod.hideSoftInput() will be called when user turn own physical keyboard on/off,
             // so have to call showWindow() here to make the soft input visible:
             showWindow(true)
@@ -729,6 +774,12 @@ class GuilelessBopomofoService : InputMethodService(), CoroutineScope, SharedPre
             USER_ENABLE_SPACE_AS_SELECTION -> {
                 val enabled = sharedPreferences?.getBoolean(key, true) ?: true
                 ChewingBridge.chewing.setSpaceAsSelection(if (enabled) 1 else 0)
+            }
+
+            USER_ENABLE_ANDROID_TV_MODE -> {
+                if (sharedPreferences?.getBoolean(key, false) == true && ::viewBinding.isInitialized) {
+                    viewBinding.keyboardPanel.focusFirstKeyForAndroidTv()
+                }
             }
 
             USER_PHRASE_CHOICE_REARWARD -> {

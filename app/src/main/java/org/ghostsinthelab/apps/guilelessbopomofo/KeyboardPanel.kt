@@ -19,17 +19,27 @@
 package org.ghostsinthelab.apps.guilelessbopomofo
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.content.SharedPreferences
 import android.util.AttributeSet
 import android.util.Log
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.KeyEvent
+import android.view.ViewGroup
+import android.widget.LinearLayout
 import android.widget.RelativeLayout
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.core.content.ContextCompat
 import com.google.android.flexbox.FlexboxLayoutManager
+import com.google.android.material.button.MaterialButton
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_ETEN26_QWERTY_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_DISPLAY_HSU_QWERTY_LAYOUT
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.ANDROID_TV_IME_WIDTH_RATIO
+import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_ENABLE_ANDROID_TV_MODE
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_PHYSICAL_KEYBOARD_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.USER_SOFT_KEYBOARD_LAYOUT
 import org.ghostsinthelab.apps.guilelessbopomofo.GuilelessBopomofoEnv.physicalKeyboardPresented
@@ -46,6 +56,8 @@ import org.ghostsinthelab.apps.guilelessbopomofo.databinding.KeyboardQwertyLayou
 import org.ghostsinthelab.apps.guilelessbopomofo.enums.Layout
 import org.ghostsinthelab.apps.guilelessbopomofo.events.Events
 import org.ghostsinthelab.apps.guilelessbopomofo.keys.virtual.ShiftKey
+import org.ghostsinthelab.apps.guilelessbopomofo.keys.KeyButton
+import org.ghostsinthelab.apps.guilelessbopomofo.keys.KeyImageButton
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.appSharedPreferences
 import org.greenrobot.eventbus.EventBus
 
@@ -57,6 +69,14 @@ class KeyboardPanel(
     companion object {
         // How many candidates a column of the grid holds.
         private const val CANDIDATE_GRID_ROWS = 4
+
+        // Keep the five/six row layout near the height of a compact Android TV keyboard.
+        private const val ANDROID_TV_KEY_HEIGHT_DP = 30
+        private const val ANDROID_TV_ICON_SIZE_DP = 20
+        private const val ANDROID_TV_PANEL_VERTICAL_PADDING_DP = 1
+        private const val ANDROID_TV_FOCUS_STROKE_DP = 4
+        private const val ANDROID_TV_FOCUSED_SCALE = 1.12f
+        private const val ANDROID_TV_FOCUSED_ELEVATION_DP = 12f
     }
 
     internal var lastChewingCursor: Int = 0
@@ -100,6 +120,66 @@ class KeyboardPanel(
                 switchToAlphanumericalLayout()
             }
         }
+    }
+
+    /** Handles a TV remote only when the user explicitly enables Android TV mode. */
+    fun handleAndroidTvKey(keyCode: Int): Boolean {
+        if (!isAndroidTvNavigationKey(keyCode)) return false
+
+        val direction = when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_UP -> View.FOCUS_UP
+            KeyEvent.KEYCODE_DPAD_DOWN -> View.FOCUS_DOWN
+            KeyEvent.KEYCODE_DPAD_LEFT -> View.FOCUS_LEFT
+            KeyEvent.KEYCODE_DPAD_RIGHT -> View.FOCUS_RIGHT
+            else -> null
+        }
+        if (direction != null) {
+            val focused = findFocus() ?: firstTvKey()?.also { it.requestFocus() } ?: return true
+            focused.focusSearch(direction)?.takeIf { it.isTvKey() }?.requestFocus()
+            return true
+        }
+
+        if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER) {
+            val focused = findFocus() ?: firstTvKey()?.also { it.requestFocus() } ?: return true
+            focused.activateForTv()
+            return true
+        }
+        return false
+    }
+
+    fun isAndroidTvNavigationKey(keyCode: Int): Boolean =
+        sharedPreferences.getBoolean(USER_ENABLE_ANDROID_TV_MODE, true) && keyCode in setOf(
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT,
+            KeyEvent.KEYCODE_DPAD_RIGHT,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+        )
+
+    fun focusFirstKeyForAndroidTv() {
+        if (sharedPreferences.getBoolean(USER_ENABLE_ANDROID_TV_MODE, true)) {
+            post { firstTvKey()?.requestFocus() }
+        }
+    }
+
+    private fun firstTvKey(): View? = findTvKeys(this).firstOrNull()
+
+    private fun findTvKeys(view: View): Sequence<View> = sequence {
+        if (view.isTvKey()) yield(view)
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                yieldAll(findTvKeys(view.getChildAt(index)))
+            }
+        }
+    }
+
+    private fun View.isTvKey() = this is KeyButton || this is KeyImageButton
+
+    private fun View.activateForTv() = when (this) {
+        is KeyButton -> activateForTv()
+        is KeyImageButton -> activateForTv()
+        else -> false
     }
 
     /**
@@ -198,7 +278,9 @@ class KeyboardPanel(
 
         this.removeAllViews()
         renderedLayout = RenderedLayout.BOPOMOFO
-        this.addView(inflateBopomofoKeyboard(userSoftKeyboardLayoutPreference))
+        val keyboard = inflateBopomofoKeyboard(userSoftKeyboardLayoutPreference)
+        this.addView(keyboard)
+        applyAndroidTvPresentation(keyboard)
     }
 
     /**
@@ -246,8 +328,89 @@ class KeyboardPanel(
 
         this.removeAllViews()
         renderedLayout = RenderedLayout.ALPHANUMERICAL
-        this.addView(KeyboardQwertyLayoutBinding.inflate(LayoutInflater.from(context)).root)
+        val keyboard = KeyboardQwertyLayoutBinding.inflate(LayoutInflater.from(context)).root
+        this.addView(keyboard)
+        applyAndroidTvPresentation(keyboard)
     }
+
+    /** Gives remote-controlled keys a compact Gboard-TV-like size and unmistakable focus. */
+    private fun applyAndroidTvPresentation(root: View) {
+        if (!sharedPreferences.getBoolean(USER_ENABLE_ANDROID_TV_MODE, true)) return
+
+        val keyHeight = dpToPx(ANDROID_TV_KEY_HEIGHT_DP.toFloat()).toInt()
+        val tvIconSize = dpToPx(ANDROID_TV_ICON_SIZE_DP.toFloat()).toInt()
+        val panelPadding = dpToPx(ANDROID_TV_PANEL_VERTICAL_PADDING_DP.toFloat()).toInt()
+        val focusStroke = dpToPx(ANDROID_TV_FOCUS_STROKE_DP.toFloat()).toInt()
+        val focusElevation = dpToPx(ANDROID_TV_FOCUSED_ELEVATION_DP)
+        val focusFill = ColorStateList.valueOf(
+            ContextCompat.getColor(context, R.color.android_tv_focus_fill)
+        )
+        val focusRing = ColorStateList.valueOf(
+            ContextCompat.getColor(context, R.color.android_tv_focus_ring)
+        )
+        val focusForeground = ColorStateList.valueOf(Color.BLACK)
+
+        val panelWidth = (resources.displayMetrics.widthPixels * ANDROID_TV_IME_WIDTH_RATIO).toInt()
+        layoutParams = layoutParams.apply {
+            width = panelWidth
+            if (this is LinearLayout.LayoutParams) gravity = Gravity.CENTER_HORIZONTAL
+        }
+        setPadding(paddingLeft, panelPadding, paddingRight, panelPadding)
+
+        fun style(view: View) {
+            if (view is ViewGroup) {
+                // The phone theme paints every keyboard container. On TV that creates a
+                // large solid rectangle, so keep only the individual key backgrounds.
+                view.background = null
+                view.clipChildren = false
+                view.clipToPadding = false
+                for (index in 0 until view.childCount) style(view.getChildAt(index))
+            }
+
+            if (!view.isTvKey()) return
+            view.isFocusable = true
+            view.isFocusableInTouchMode = true
+            view.minimumHeight = 0
+            view.layoutParams = view.layoutParams.apply { height = keyHeight }
+
+            (view as MaterialButton).apply {
+                val normalBackgroundTint = backgroundTintList
+                val normalIconTint = iconTint
+                val normalTextColors = textColors
+
+                insetTop = 0
+                insetBottom = 0
+                iconSize = tvIconSize
+                setPadding(0, 0, 0, 0)
+                strokeWidth = 0
+                strokeColor = focusRing
+                setOnFocusChangeListener { focusedView, hasFocus ->
+                    if (hasFocus) {
+                        backgroundTintList = focusFill
+                        iconTint = focusForeground
+                        setTextColor(Color.BLACK)
+                        strokeWidth = focusStroke
+                        focusedView.bringToFront()
+                    } else {
+                        backgroundTintList = normalBackgroundTint
+                        iconTint = normalIconTint
+                        setTextColor(normalTextColors)
+                        strokeWidth = 0
+                    }
+                    focusedView.animate()
+                        .scaleX(if (hasFocus) ANDROID_TV_FOCUSED_SCALE else 1f)
+                        .scaleY(if (hasFocus) ANDROID_TV_FOCUSED_SCALE else 1f)
+                        .translationZ(if (hasFocus) focusElevation else 0f)
+                        .setDuration(100L)
+                        .start()
+                }
+            }
+        }
+
+        style(root)
+    }
+
+    private fun dpToPx(dp: Float): Float = dp * resources.displayMetrics.density
 
     private fun switchToSymbolPicker() {
         currentLayout = Layout.SYMBOLS
@@ -326,6 +489,7 @@ class KeyboardPanel(
         // The keyboard is gone from the screen now, whatever it was.
         renderedLayout = null
         this.addView(candidatesLayoutBinding.root)
+        applyAndroidTvPresentation(candidatesLayoutBinding.root)
 
         renderCandidatesLayout(
             if (physicalKeyboardPresented) CandidateLayoutStyle.LIST else CandidateLayoutStyle.GRID

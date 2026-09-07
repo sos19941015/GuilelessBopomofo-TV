@@ -22,6 +22,7 @@ import android.content.Context
 import android.util.AttributeSet
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.os.SystemClock
 import com.google.android.material.button.MaterialButton
 import org.ghostsinthelab.apps.guilelessbopomofo.R
 import org.ghostsinthelab.apps.guilelessbopomofo.utils.DisplayMetricsComputable
@@ -54,6 +55,20 @@ abstract class KeyButton(context: Context, attrs: AttributeSet) :
             gestureDetector.onTouchEvent(event)
         }
         return super.onTouchEvent(event)
+    }
+
+    /** Invokes the same gesture path as a tap without sending a real touch event to the view. */
+    fun activateForTv(): Boolean {
+        val time = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, width / 2f, height / 2f, 0)
+        val up = MotionEvent.obtain(time, time, MotionEvent.ACTION_UP, width / 2f, height / 2f, 0)
+        return try {
+            gestureDetector.onTouchEvent(down)
+            gestureDetector.onTouchEvent(up)
+        } finally {
+            down.recycle()
+            up.recycle()
+        }
     }
 
     init {

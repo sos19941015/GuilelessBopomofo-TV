@@ -36,6 +36,10 @@ object GuilelessBopomofoEnv {
     const val USER_ENABLE_DOUBLE_TOUCH_IME_SWITCH : String = "user_enable_double_touch_ime_switch"
     const val USER_ENABLE_IME_SWITCH : String = "user_enable_ime_switch"
     const val USER_ENABLE_SPACE_AS_SELECTION : String = "user_enable_space_as_selection"
+    const val USER_ENABLE_ANDROID_TV_MODE : String = "user_enable_android_tv_mode"
+    const val ANDROID_TV_DEFAULT_ENABLED_V2 : String = "android_tv_default_enabled_v2"
+    const val ANDROID_TV_IME_WIDTH_RATIO : Float = 0.45f
+    const val IME_SWITCH_DEFAULT_ENABLED_V2 : String = "ime_switch_default_enabled_v2"
     const val USER_FULLSCREEN_WHEN_IN_LANDSCAPE : String = "user_fullscreen_when_in_landscape"
     const val USER_FULLSCREEN_WHEN_IN_PORTRAIT : String = "user_fullscreen_when_in_portrait"
     const val USER_HAPTIC_FEEDBACK_STRENGTH : String = "user_haptic_feedback_strength"

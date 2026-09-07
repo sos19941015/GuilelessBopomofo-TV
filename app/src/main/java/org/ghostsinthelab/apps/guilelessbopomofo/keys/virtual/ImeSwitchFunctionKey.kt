@@ -73,7 +73,7 @@ class ImeSwitchFunctionKey(context: Context, attrs: AttributeSet) :
     }
 
     private fun setKeyVisibility() {
-        val userEnableImeSwitch = sharedPreferences.getBoolean(USER_ENABLE_IME_SWITCH, false)
+        val userEnableImeSwitch = sharedPreferences.getBoolean(USER_ENABLE_IME_SWITCH, true)
         this@ImeSwitchFunctionKey.visibility = if (userEnableImeSwitch) {
             VISIBLE
         } else {

@@ -1,3 +1,31 @@
+# Guileless Bopomofo TV 樸實注音鍵盤 TV 版
+
+這是 [Guileless Bopomofo 樸實注音鍵盤](https://github.com/hiroshiyui/GuilelessBopomofo) 的社群 Android TV 衍生版本，針對電視遙控器 DPAD 操作與客廳距離的顯示方式進行調整。
+
+This is a community Android TV derivative of [Guileless Bopomofo](https://github.com/hiroshiyui/GuilelessBopomofo), adapted for TV remote DPAD navigation and living-room viewing distances.
+
+## TV 版功能
+
+- 支援 Android TV 遙控器方向鍵、確認鍵操作。
+- 高對比黃色焦點框與放大效果。
+- 鍵盤、候選字列及組字列縮為螢幕寬度 45%，並水平置中。
+- 鍵盤周圍使用透明背景，減少遮擋播放內容。
+- Android TV 模式與輸入法切換按鍵預設開啟。
+- 提供 Android TV Launcher 入口及 16:9 TV banner。
+- Debug 建置不包含 LeakCanary 的額外 Leaks 圖示。
+
+## 原作者與致謝
+
+本專案建立在 **YOU, Hui-Hong（[@hiroshiyui](https://github.com/hiroshiyui)）** 開發的 Guileless Bopomofo 之上。衷心感謝原作者長期投入開發、維護並以自由軟體方式公開原始碼，也感謝 [libchewing](https://github.com/chewing/libchewing) 的所有貢獻者。
+
+原作者已在 [issue #74](https://github.com/hiroshiyui/GuilelessBopomofo/issues/74#issuecomment-5562545211) 回覆，同意依 `LICENSE` 與 `NOTICES.md` 的規範釋出程式碼，並說明原圖示可依 GPL-3.0-or-later 修改與散布。本 TV 版 banner 以原圖示為基礎製作並加入「TV」標示。
+
+原專案的著作權聲明、[GPL-3.0 授權條款](./LICENSE)及[第三方元件聲明](./NOTICES.md)均完整保留。本衍生版本同樣依 GPL-3.0-or-later 提供。
+
+---
+
+## 原專案 README
+
 >**聲明：** 本人已經離開軟體業，此專案僅能提供「維持與新版新酷音函式庫、新版 Android 相容性」此最小限度的維護更新，恕不再接受任何功能請求。
 >
 >**Statement:** I have left the software industry. This project will only provide minimal maintenance to ensure compatibility with new versions of the libchewing library and Android. No feature requests will be accepted.

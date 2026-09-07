@@ -14,6 +14,16 @@ This is a community Android TV derivative of [Guileless Bopomofo](https://github
 - 提供 Android TV Launcher 入口及 16:9 TV banner。
 - Debug 建置不包含 LeakCanary 的額外 Leaks 圖示。
 
+## 下載與安裝
+
+您可以從 [GitHub Releases](https://github.com/sos19941015/GuilelessBopomofo-TV/releases) 下載 APK，或在 Android TV 上使用 [Downloader app](https://www.aftvnews.com/downloader)：
+
+1. 開啟 Downloader app，輸入代碼 **8284875**。
+2. 也可以在 Downloader 或任何瀏覽器輸入 **`aftv.news/8284875`**。
+3. 網頁開啟後下載 APK，依 Android TV 畫面指示允許該 App 安裝未知來源應用程式，然後完成安裝。
+
+To download on Android TV, enter code **8284875** in the [Downloader app](https://www.aftvnews.com/downloader). You can also enter **`aftv.news/8284875`** in Downloader or any browser to open the destination URL.
+
 ## 原作者與致謝
 
 本專案建立在 **YOU, Hui-Hong（[@hiroshiyui](https://github.com/hiroshiyui)）** 開發的 Guileless Bopomofo 之上。衷心感謝原作者長期投入開發、維護並以自由軟體方式公開原始碼，也感謝 [libchewing](https://github.com/chewing/libchewing) 的所有貢獻者。
